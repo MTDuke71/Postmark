@@ -1,7 +1,7 @@
 //! Move encoding and the fixed-capacity move list.
 
 use std::fmt;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use crate::types::{PieceKind, Square};
 
@@ -63,6 +63,22 @@ impl Move {
         // Knight..Queen have indices 1..4, giving the selector 0..3.
         let flag = Move::PROMOTION | (kind.index() as u16 - 1);
         if capture { flag | Move::CAPTURE } else { flag }
+    }
+
+    /// Returns the 16-bit encoding, for compact storage.
+    #[inline]
+    pub const fn raw(self) -> u16 {
+        self.0
+    }
+
+    /// Rebuilds a move from its 16-bit encoding.
+    ///
+    /// Any bit pattern yields a well-formed value, but not necessarily a move
+    /// that is legal, or even meaningful, in a given position; a move that
+    /// comes from untrusted storage must be validated before it is played.
+    #[inline]
+    pub const fn from_raw(raw: u16) -> Move {
+        Move(raw)
     }
 
     /// Returns the origin square.
@@ -188,6 +204,13 @@ impl Deref for MoveList {
     #[inline]
     fn deref(&self) -> &[Move] {
         &self.moves[..self.len]
+    }
+}
+
+impl DerefMut for MoveList {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut [Move] {
+        &mut self.moves[..self.len]
     }
 }
 

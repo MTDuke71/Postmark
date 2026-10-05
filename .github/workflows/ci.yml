@@ -58,8 +58,12 @@ jobs:
       - name: Build generic
         run: cargo generic
 
-      - name: Run release binaries
+      # PRN-6: both tiers must search exactly the same tree.
+      - name: Bench
         shell: bash
         run: |
-          ./target/v3/release/postmark
-          ./target/generic/release/postmark
+          v3=$(./target/v3/release/postmark bench | tail -n 1)
+          generic=$(./target/generic/release/postmark bench | tail -n 1)
+          echo "v3:      $v3"
+          echo "generic: $generic"
+          test "${v3%% *}" = "${generic%% *}"

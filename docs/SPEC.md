@@ -1,6 +1,6 @@
 # Postmark — Engine Specification
 
-Status: **Agreed 1.1** (2026-10-05)
+Status: **Agreed 1.2** (2026-10-05)
 
 Postmark is a UCI chess engine written in Rust. Its single yardstick is playing
 strength: a change that affects play is accepted only if it is shown to gain
@@ -120,7 +120,7 @@ late move pruning, check and singular extensions, internal iterative reductions.
 | TST-8 | Documentation (PRN-7) is enforced in CI: the `missing_docs`, `clippy::missing_docs_in_private_items`, `clippy::missing_safety_doc` and `clippy::missing_panics_doc` lints are denied, and `cargo doc` must build without warnings. |
 | TST-2 | `bench` searches a fixed set of positions to a fixed depth and prints total nodes and NPS. The node count is recorded in every commit message that touches the engine (`Bench: 1234567`). |
 | TST-3 | A commit declared non-functional must leave the bench node count unchanged. |
-| TST-4 | **Merge gate.** Every change to search, evaluation or time management must pass a fastchess SPRT against the current `main`: time control 8+0.08, 1 thread, 16 MB hash, α = β = 0.05, unbalanced (UHO) opening book, games played in pairs with colours reversed. |
+| TST-4 | **Merge gate.** Every change to search, evaluation or time management must pass a fastchess SPRT against the current `main`: time control 8+0.08, 1 thread, 16 MB hash, α = β = 0.05, the `UHO_2024_8mvs_+090_+099` unbalanced opening book, games played in pairs with colours reversed. |
 | TST-5 | Elo bounds: `[0, 5]` for strength changes during early development, tightening to `[0, 3]` once typical gains fall below 5 Elo. Refactors and simplifications use non-regression bounds `[-5, 0]`. |
 | TST-6 | Speed-only changes are verified by bench NPS on the same machine and an unchanged node count; they need no SPRT. |
 | TST-7 | Each tagged release is played in a gauntlet that includes Huginn, and the result is recorded in the release notes. |

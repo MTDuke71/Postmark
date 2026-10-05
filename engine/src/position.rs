@@ -127,6 +127,31 @@ impl fmt::Display for FenError {
 
 impl std::error::Error for FenError {}
 
+/// Formats the position as a text diagram, White at the bottom, followed by
+/// its FEN and Zobrist key.
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const RULE: &str = "  +---+---+---+---+---+---+---+---+";
+        writeln!(f, "{RULE}")?;
+        for rank in (0..8).rev() {
+            write!(f, "{} |", rank + 1)?;
+            for file in 0..8 {
+                let piece = self.piece_on(Square::from_file_rank(file, rank));
+                write!(f, " {} |", piece.map_or(' ', Piece::to_char))?;
+            }
+            writeln!(
+                f,
+                "
+{RULE}"
+            )?;
+        }
+        writeln!(f, "    a   b   c   d   e   f   g   h")?;
+        writeln!(f)?;
+        writeln!(f, "Fen: {}", self.to_fen())?;
+        write!(f, "Key: {:016X}", self.key)
+    }
+}
+
 /// State that a move destroys and that cannot be recomputed when the move is
 /// taken back, saved by [`Position::make_move`] (BRD-5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -317,6 +342,51 @@ impl Position {
         self.checkers().any()
     }
 
+    /// Returns `true` if neither side has enough material to deliver mate:
+    /// no pawns, rooks or queens, and at most one knight or bishop in total
+    /// (king against king, or king and minor piece against king).
+    pub fn has_insufficient_material(&self) -> bool {
+        let heavy =
+            self.kind(PieceKind::Pawn) | self.kind(PieceKind::Rook) | self.kind(PieceKind::Queen);
+        let minors = self.kind(PieceKind::Knight) | self.kind(PieceKind::Bishop);
+        heavy.is_empty() && !minors.more_than_one()
+    }
+
+    /// Returns `true` if the current position counts as a draw by
+    /// repetition for a search that is `plies_from_root` moves below its
+    /// root (SRC-4).
+    ///
+    /// A position repeated *inside* the search tree is scored as a draw on
+    /// its first repetition: if a line can return to a position once it can
+    /// do so again, so searching further cannot change the verdict. A
+    /// position that only matches one from the game before the root needs
+    /// two earlier occurrences, the genuine threefold rule, because the
+    /// engine must not claim a draw the rules do not yet grant.
+    ///
+    /// Only positions since the last capture or pawn move can repeat, and
+    /// only those with the same side to move, so the scan steps back two
+    /// plies at a time no further than the halfmove clock. The nearest
+    /// possible repetition is four plies back.
+    pub fn is_repetition(&self, plies_from_root: usize) -> bool {
+        let played = self.history.len();
+        let reach = played.min(self.halfmove_clock as usize);
+        let mut earlier = 0;
+        for back in (4..=reach).step_by(2) {
+            // `history[n].key` is the key of the position before move `n`,
+            // i.e. the position `played - n` plies ago.
+            if self.history[played - back].key == self.key {
+                if back <= plies_from_root {
+                    return true;
+                }
+                earlier += 1;
+                if earlier == 2 {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Returns the en-passant contribution to the Zobrist key.
     ///
     /// The en-passant file is hashed only when a pawn of the side to move
@@ -383,7 +453,7 @@ impl Position {
     /// Returns the origin and destination of the rook in a castling move
     /// whose king lands on `king_to` (g1/g8 king-side, c1/c8 queen-side).
     #[inline]
-    fn castling_rook_squares(mv: Move, king_to: Square) -> (Square, Square) {
+    pub(crate) fn castling_rook_squares(mv: Move, king_to: Square) -> (Square, Square) {
         if mv.flag() == Move::KING_CASTLE {
             (king_to.offset(1), king_to.offset(-1))
         } else {
@@ -811,6 +881,64 @@ mod tests {
         ];
         for (fen, error) in cases {
             assert_eq!(Position::from_fen(fen), Err(error), "{fen:?}");
+        }
+    }
+
+    /// Plays the UCI moves in `moves` from the start position.
+    fn play(moves: &str) -> Position {
+        use crate::movegen::{GenKind, generate};
+        use crate::moves::MoveList;
+        let mut position = Position::startpos();
+        for text in moves.split_whitespace() {
+            let mut list = MoveList::new();
+            generate(&position, GenKind::All, &mut list);
+            let mv = *list.iter().find(|mv| mv.to_string() == text).unwrap();
+            position.make_move(mv);
+        }
+        position
+    }
+
+    #[test]
+    fn repetition_inside_and_before_the_search_tree() {
+        // One knight shuffle: the start position has now occurred twice.
+        let once = play("g1f3 g8f6 f3g1 f6g8");
+        assert!(once.is_repetition(4), "repeats a position inside the tree");
+        assert!(
+            !once.is_repetition(0),
+            "only one earlier occurrence in the game"
+        );
+        // Two shuffles: third occurrence, a draw wherever the root is.
+        let twice = play("g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8");
+        assert!(twice.is_repetition(0));
+        // A pawn move in between makes the earlier positions unreachable.
+        let reset = play("g1f3 g8f6 f3g1 f6g8 e2e4");
+        assert!(!reset.is_repetition(5));
+    }
+
+    #[test]
+    fn insufficient_material() {
+        let draw = [
+            "4k3/8/8/8/8/8/8/4K3 w - - 0 1",
+            "4k3/8/8/8/8/8/8/4KN2 w - - 0 1",
+            "4kb2/8/8/8/8/8/8/4K3 w - - 0 1",
+        ];
+        for fen in draw {
+            assert!(
+                Position::from_fen(fen).unwrap().has_insufficient_material(),
+                "{fen}"
+            );
+        }
+        let play_on = [
+            "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1",
+            "4k3/8/8/8/8/8/8/4KNN1 w - - 0 1",
+            "4kb2/8/8/8/8/8/8/4KB2 w - - 0 1",
+            "4k3/8/8/8/8/8/8/4K2R w - - 0 1",
+        ];
+        for fen in play_on {
+            assert!(
+                !Position::from_fen(fen).unwrap().has_insufficient_material(),
+                "{fen}"
+            );
         }
     }
 
