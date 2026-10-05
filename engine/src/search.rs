@@ -434,7 +434,26 @@ impl<'a> Searcher<'a> {
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
             self.make(mv);
-            let score = -self.negamax(depth - 1, ply + 1, -beta, -alpha);
+            // Principal variation search. With good move ordering the
+            // first move is usually best, so the others only need to be
+            // shown to be no better. That is asked with a *null window*
+            // `(alpha, alpha + 1)`, which no score can fall inside: the
+            // search can only answer "at most alpha" or "more than alpha",
+            // and it cuts off far sooner than with a real window. If a
+            // later move does beat alpha (and the window is not already
+            // null), its true score is needed, so it is searched again with
+            // the full window. The re-searches cost less than the null
+            // windows save.
+            let score = if index == 0 {
+                -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+            } else {
+                let probe = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                if probe > alpha && probe < beta {
+                    -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+                } else {
+                    probe
+                }
+            };
             self.unmake(mv);
             if self.aborted {
                 return DRAW;
