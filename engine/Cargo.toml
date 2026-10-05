@@ -1,0 +1,13 @@
+[package]
+name = "postmark"
+description = "Postmark UCI chess engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# PRN-3: this crate has no runtime dependencies.
+[dependencies]
+
+[lints]
+workspace = true
