@@ -13,14 +13,22 @@ Requires stable Rust (the toolchain is pinned by `rust-toolchain.toml`).
 | `cargo v3` | `target/v3/release/postmark` | AVX2, BMI2, POPCNT (x86-64-v3) |
 | `cargo generic` | `target/generic/release/postmark` | any x86-64 |
 
-## Perft
+## Running
 
-```
-postmark perft <depth> [fen]
-```
+Run with no arguments, `postmark` speaks UCI on standard input and output,
+for use with any UCI chess GUI or match runner. Options: `Hash` (MB),
+`Threads` (accepted; one thread for now) and `Move Overhead` (ms).
 
-Counts the positions reachable in `depth` moves from the given position (the
-start position if no FEN is given), listing the count below each move.
+Besides the standard UCI commands it understands:
+
+| Command | Effect |
+|---------|--------|
+| `d` | Print the current position. |
+| `perft <depth>` | Count the positions reachable in `depth` moves, listed per move. |
+| `bench [depth]` | Search a fixed set of positions and print the node count and speed. |
+
+A command given on the command line is run once and the engine exits, e.g.
+`postmark bench`.
 
 ## Checks
 
