@@ -18,7 +18,8 @@ use crate::eval::{Evaluator, PstEvaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
-    NODE_POLL_MASK, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
+    NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION,
+    ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
 };
 use crate::position::Position;
 use crate::timeman::{Limits, TimeBudget};
@@ -143,6 +144,9 @@ pub struct Searcher<'a> {
     pv: Vec<[Move; MAX_PLY]>,
     /// Length of each line in `pv`.
     pv_len: [usize; MAX_PLY + 1],
+    /// For each ply, whether the node there is currently searching a null
+    /// move, so that its child does not try one straight after.
+    null_moved: [bool; MAX_PLY + 1],
     /// Best line from the root that is safe to play: taken from the last
     /// completed iteration, or from the current one once a root move has
     /// been fully searched and found best (SRC-6).
@@ -180,6 +184,7 @@ impl<'a> Searcher<'a> {
             aborted: false,
             pv: vec![[Move::NULL; MAX_PLY]; MAX_PLY + 1],
             pv_len: [0; MAX_PLY + 1],
+            null_moved: [false; MAX_PLY + 1],
             root_pv: Vec::with_capacity(MAX_PLY),
         }
     }
@@ -402,15 +407,56 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let in_check = self.position.in_check();
+
+        // Null-move pruning. Having the move is almost always an advantage,
+        // so if the side to move can pass and a reduced search still scores
+        // at least beta, a real move would do so too and the node can be
+        // cut off without searching any. The reduced search is much cheaper
+        // than the moves it replaces.
+        //
+        // It is skipped where the assumption fails or the test is
+        // pointless:
+        // * in check, where passing is illegal;
+        // * in PV nodes (a window wider than one), which need exact scores;
+        // * when the static evaluation is already below beta, since
+        //   passing is then unlikely to reach it;
+        // * with only pawns and a king, where zugzwang, a position in which
+        //   every move is worse than passing, is common;
+        // * directly after another null move, which would just hand the
+        //   move back and search the same position at lower depth.
+        //
+        // A mate score from the null search is not trusted, because the
+        // mate was found with the opponent's help; beta is returned
+        // instead.
+        let side = self.position.side_to_move();
+        if !in_check
+            && beta - alpha == 1
+            && depth >= NULL_MOVE_MIN_DEPTH
+            && ply > 0
+            && !self.null_moved[ply - 1]
+            && self.position.has_non_pawn_material(side)
+            && self.evaluator.evaluate(&self.position) >= beta
+        {
+            let reduction = NULL_MOVE_REDUCTION + depth / NULL_MOVE_DEPTH_DIVISOR;
+            self.null_moved[ply] = true;
+            self.position.make_null_move();
+            let score = -self.negamax(depth - 1 - reduction, ply + 1, -beta, -beta + 1);
+            self.position.unmake_null_move();
+            self.null_moved[ply] = false;
+            if self.aborted {
+                return DRAW;
+            }
+            if score >= beta {
+                return if score >= MATE_BOUND { beta } else { score };
+            }
+        }
+
         let mut list = MoveList::new();
         generate(&self.position, GenKind::All, &mut list);
         if list.is_empty() {
             // No legal moves: checkmate if in check, otherwise stalemate.
-            return if self.position.in_check() {
-                -MATE + ply as i32
-            } else {
-                DRAW
-            };
+            return if in_check { -MATE + ply as i32 } else { DRAW };
         }
         // The fifty-move rule is tested only now because a checkmate
         // delivered by the hundredth halfmove takes precedence over it.

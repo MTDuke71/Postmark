@@ -533,6 +533,56 @@ impl Position {
         self.key ^= self.ep_key();
     }
 
+    /// Passes the turn without moving a piece: a *null move*, used by the
+    /// search to test how good the position is even after giving the
+    /// opponent a free move. The side to move must not be in check.
+    ///
+    /// The halfmove clock is set to zero, which stops repetition detection
+    /// from looking back across the null move; positions on either side of
+    /// it are not connected by legal play, so a match between them would
+    /// not be a real repetition. It is restored by
+    /// [`Position::unmake_null_move`].
+    pub fn make_null_move(&mut self) {
+        debug_assert!(!self.in_check());
+        self.history.push(Undo {
+            captured: None,
+            castling: self.castling,
+            ep_square: self.ep_square,
+            halfmove_clock: self.halfmove_clock,
+            key: self.key,
+        });
+        self.key ^= self.ep_key();
+        self.ep_square = None;
+        self.halfmove_clock = 0;
+        self.side = !self.side;
+        self.key ^= ZOBRIST.side;
+    }
+
+    /// Takes back a null move made by [`Position::make_null_move`], which
+    /// must be the most recent move made and not yet unmade.
+    ///
+    /// # Panics
+    ///
+    /// Panics if no move has been made.
+    pub fn unmake_null_move(&mut self) {
+        let undo = self
+            .history
+            .pop()
+            .expect("unmake_null_move without a move to take back");
+        self.side = !self.side;
+        self.ep_square = undo.ep_square;
+        self.halfmove_clock = undo.halfmove_clock;
+        self.key = undo.key;
+    }
+
+    /// Returns `true` if `color` has any piece other than pawns and its
+    /// king.
+    #[inline]
+    pub fn has_non_pawn_material(&self, color: Color) -> bool {
+        let pawns_and_kings = self.kind(PieceKind::Pawn) | self.kind(PieceKind::King);
+        (self.color(color) & !pawns_and_kings).any()
+    }
+
     /// Takes back `mv`, which must be the move most recently made and not yet
     /// unmade. The position is restored exactly, including its key (BRD-5).
     ///
@@ -913,6 +963,19 @@ mod tests {
         // A pawn move in between makes the earlier positions unreachable.
         let reset = play("g1f3 g8f6 f3g1 f6g8 e2e4");
         assert!(!reset.is_repetition(5));
+    }
+
+    #[test]
+    fn null_move_passes_the_turn_and_is_reversible() {
+        let fen = "rnbqkbnr/ppp1pppp/8/8/3pP3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 3";
+        let mut position = Position::from_fen(fen).unwrap();
+        let before = position.clone();
+        position.make_null_move();
+        assert_eq!(position.side_to_move(), Color::White);
+        assert_eq!(position.ep_square(), None);
+        assert_eq!(position.key(), position.compute_key());
+        position.unmake_null_move();
+        assert_eq!(position, before);
     }
 
     #[test]

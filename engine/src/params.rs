@@ -27,6 +27,17 @@ pub const ORDER_CAPTURE: i32 = 100_000;
 /// victims the least valuable attacker first (MVV-LVA).
 pub const ORDER_VICTIM_WEIGHT: i32 = 8;
 
+/// Least remaining depth at which null-move pruning is tried.
+pub const NULL_MOVE_MIN_DEPTH: i32 = 3;
+
+/// Plies removed from the search that follows a null move, before the
+/// depth-dependent part (see [`NULL_MOVE_DEPTH_DIVISOR`]).
+pub const NULL_MOVE_REDUCTION: i32 = 3;
+
+/// The null-move reduction grows by one ply for every this many plies of
+/// remaining depth.
+pub const NULL_MOVE_DEPTH_DIVISOR: i32 = 4;
+
 /// Number of moves the remaining time is spread over when the time control
 /// does not say how many moves are left.
 pub const TIME_MOVES_TO_GO: u64 = 20;
