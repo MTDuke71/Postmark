@@ -377,6 +377,31 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        // Transposition table cutoff. The same position is often reached by
+        // different move orders; if it has already been searched at least as
+        // deeply as is needed now, the stored result can be reused instead
+        // of searching again. An exact score is always usable. A lower
+        // bound is enough when it already reaches beta, and an upper bound
+        // when it does not exceed alpha, because in both cases the node's
+        // outcome relative to the window is settled. The root is excluded,
+        // since it must produce a move, not just a score.
+        let key = self.position.key();
+        let entry = self.table.probe(key, ply);
+        if ply > 0
+            && let Some(entry) = entry
+            && entry.depth >= depth
+        {
+            let usable = match entry.bound {
+                Bound::Exact => true,
+                Bound::Lower => entry.score >= beta,
+                Bound::Upper => entry.score <= alpha,
+                Bound::None => false,
+            };
+            if usable {
+                return entry.score;
+            }
+        }
+
         let mut list = MoveList::new();
         generate(&self.position, GenKind::All, &mut list);
         if list.is_empty() {
@@ -398,13 +423,9 @@ impl<'a> Searcher<'a> {
         // generated for this one, never played directly (SRC-8). At the
         // root the previous iteration's best move is used instead, which
         // cannot have been overwritten.
-        let key = self.position.key();
         let hash_move = match self.root_pv.first() {
             Some(&mv) if ply == 0 => mv,
-            _ => self
-                .table
-                .probe(key, ply)
-                .map_or(Move::NULL, |entry| entry.mv),
+            _ => entry.map_or(Move::NULL, |entry| entry.mv),
         };
         let mut scores = self.score_moves(&list, hash_move);
 
