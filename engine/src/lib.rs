@@ -5,6 +5,16 @@
 //! requirements this crate implements; requirement IDs such as `BLD-2` in
 //! comments refer to that document.
 
+pub mod attacks;
+pub mod bitboard;
+pub mod movegen;
+pub mod moves;
+pub mod perft;
+pub mod position;
+pub mod rng;
+pub mod types;
+pub mod zobrist;
+
 /// Engine name, as shown to the user and reported over UCI.
 pub const NAME: &str = "Postmark";
 
