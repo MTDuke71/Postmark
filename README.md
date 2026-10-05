@@ -13,6 +13,15 @@ Requires stable Rust (the toolchain is pinned by `rust-toolchain.toml`).
 | `cargo v3` | `target/v3/release/postmark` | AVX2, BMI2, POPCNT (x86-64-v3) |
 | `cargo generic` | `target/generic/release/postmark` | any x86-64 |
 
+## Perft
+
+```
+postmark perft <depth> [fen]
+```
+
+Counts the positions reachable in `depth` moves from the given position (the
+start position if no FEN is given), listing the count below each move.
+
 ## Checks
 
 These are the checks CI runs on every push:
@@ -22,4 +31,11 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo doc --workspace --no-deps --document-private-items
+```
+
+CI also runs the full perft suite, which is skipped by default because it is
+slow unoptimised:
+
+```
+cargo test --workspace --release -- --include-ignored
 ```

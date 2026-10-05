@@ -33,6 +33,19 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      # MGN-4 / TST-1: the full perft suite is too slow for a debug build, so
+      # it is marked ignored and run here, optimised, on both CPU tiers.
+      - name: Perft suite (generic)
+        run: cargo test --workspace --release -- --include-ignored
+
+      - name: Clippy and perft suite (v3)
+        shell: bash
+        run: |
+          cargo clippy --workspace --all-targets --target-dir target/v3 -- -D warnings
+          cargo test --workspace --release --target-dir target/v3 -- --include-ignored
+        env:
+          RUSTFLAGS: -Ctarget-cpu=x86-64-v3
+
       - name: Docs
         run: cargo doc --workspace --no-deps --document-private-items
         env:
