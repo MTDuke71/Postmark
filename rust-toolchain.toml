@@ -1,0 +1,4 @@
+# BLD-1: stable Rust only.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]

@@ -1,0 +1,17 @@
+# Release builds (BLD-2). The CPU tier is chosen by the target features passed
+# to the compiler; each tier gets its own target directory so the two binaries
+# never overwrite one another.
+#
+#   cargo v3       -> target/v3/release/postmark       (AVX2, BMI2, POPCNT)
+#   cargo generic  -> target/generic/release/postmark  (baseline x86-64)
+[alias]
+v3 = [
+    "build", "--release", "-p", "postmark",
+    "--target-dir", "target/v3",
+    "--config", "build.rustflags=['-Ctarget-cpu=x86-64-v3']",
+]
+generic = [
+    "build", "--release", "-p", "postmark",
+    "--target-dir", "target/generic",
+    "--config", "build.rustflags=['-Ctarget-cpu=x86-64']",
+]

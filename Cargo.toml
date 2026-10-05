@@ -1,0 +1,27 @@
+[workspace]
+resolver = "3"
+members = ["engine"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+license = "Unlicense"
+repository = "https://github.com/MTDuke71/Postmark"
+
+# Documentation requirements PRN-7 / TST-8. These are warnings locally so work
+# in progress still compiles; CI turns every warning into an error.
+[workspace.lints.rust]
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+missing_docs_in_private_items = "warn"
+missing_safety_doc = "warn"
+missing_panics_doc = "warn"
+undocumented_unsafe_blocks = "warn"
+
+# BLD-4
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

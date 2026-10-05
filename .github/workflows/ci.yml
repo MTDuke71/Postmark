@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml selects the toolchain and components.
+      - name: Show toolchain
+        run: rustup show
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # TST-1 / TST-8: all warnings, including missing documentation, are errors.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Docs
+        run: cargo doc --workspace --no-deps --document-private-items
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      # BLD-2: both release tiers must build and run.
+      - name: Build v3
+        run: cargo v3
+
+      - name: Build generic
+        run: cargo generic
+
+      - name: Run release binaries
+        shell: bash
+        run: |
+          ./target/v3/release/postmark
+          ./target/generic/release/postmark

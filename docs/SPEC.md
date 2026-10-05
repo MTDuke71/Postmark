@@ -1,6 +1,6 @@
 # Postmark — Engine Specification
 
-Status: **Agreed 1.0** (2026-10-05)
+Status: **Agreed 1.1** (2026-10-05)
 
 Postmark is a UCI chess engine written in Rust. Its single yardstick is playing
 strength: a change that affects play is accepted only if it is shown to gain
@@ -31,7 +31,7 @@ otherwise.
 | ID | Requirement |
 |----|-------------|
 | BLD-1 | Stable Rust, edition 2024. No nightly features. |
-| BLD-2 | Two release builds, selected at compile time by cargo feature: **`v3`** (x86-64-v3: AVX2, POPCNT, BMI2) is the primary build; **`generic`** (baseline x86-64) is the portable fallback. |
+| BLD-2 | Two release builds, selected at compile time: **`cargo v3`** (x86-64-v3: AVX2, POPCNT, BMI2) is the primary build; **`cargo generic`** (baseline x86-64) is the portable fallback. The tier is set by the compiler's target CPU, and code selects its implementation with `cfg(target_feature = ...)`, so a binary can never contain instructions its tier does not enable. |
 | BLD-3 | Slider attacks use PEXT in the `v3` build and magic bitboards in the `generic` build, behind one common interface. |
 | BLD-4 | Release profile: `opt-level = 3`, fat LTO, `codegen-units = 1`, `panic = "abort"`. |
 | BLD-6 | The repository is a cargo workspace. The engine crate (a library plus the UCI binary) is the only crate bound by PRN-3. Tooling (training-data generation driver, test scripts) lives in a separate tools crate, created when the first tool is needed, and may use dependencies. |
