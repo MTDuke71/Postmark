@@ -21,6 +21,13 @@ pub const ORDER_QUEEN_PROMOTION: i32 = 200_000;
 /// (see [`ORDER_VICTIM_WEIGHT`]).
 pub const ORDER_CAPTURE: i32 = 100_000;
 
+/// Ordering score of the first killer move at a ply: below every capture,
+/// above the other quiet moves.
+pub const ORDER_KILLER_FIRST: i32 = 90_000;
+
+/// Ordering score of the second killer move at a ply.
+pub const ORDER_KILLER_SECOND: i32 = 80_000;
+
 /// Multiplier of the captured piece's kind index in a capture's ordering
 /// score. It exceeds the largest attacker index, so the victim always
 /// dominates: the order is most valuable victim first, and among equal

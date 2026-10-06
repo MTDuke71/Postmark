@@ -19,7 +19,8 @@ use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
     NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION,
-    ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
+    ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION,
+    ORDER_VICTIM_WEIGHT,
 };
 use crate::position::Position;
 use crate::timeman::{Limits, TimeBudget};
@@ -144,6 +145,9 @@ pub struct Searcher<'a> {
     pv: Vec<[Move; MAX_PLY]>,
     /// Length of each line in `pv`.
     pv_len: [usize; MAX_PLY + 1],
+    /// Killer moves: for each ply, the two quiet moves that most recently
+    /// caused a cutoff there, newest first.
+    killers: [[Move; 2]; MAX_PLY + 1],
     /// For each ply, whether the node there is currently searching a null
     /// move, so that its child does not try one straight after.
     null_moved: [bool; MAX_PLY + 1],
@@ -184,6 +188,7 @@ impl<'a> Searcher<'a> {
             aborted: false,
             pv: vec![[Move::NULL; MAX_PLY]; MAX_PLY + 1],
             pv_len: [0; MAX_PLY + 1],
+            killers: [[Move::NULL; 2]; MAX_PLY + 1],
             null_moved: [false; MAX_PLY + 1],
             root_pv: Vec::with_capacity(MAX_PLY),
         }
@@ -287,10 +292,22 @@ impl<'a> Searcher<'a> {
     /// The earlier a good move is tried, the sooner a cutoff comes and the
     /// smaller the tree. The order is the hash move, then queen promotions,
     /// then captures by most valuable victim and least valuable attacker,
-    /// then everything else in generation order (SRC-3).
-    fn order_score(&self, mv: Move, hash_move: Move) -> i32 {
+    /// then the two `killers`, then everything else in generation order
+    /// (SRC-3).
+    ///
+    /// A killer is a quiet move that refuted a sibling position at the same
+    /// ply. Sibling positions differ by one move of the opponent, so the
+    /// same reply often refutes many of them; trying it early finds those
+    /// cutoffs without searching the other quiet moves first.
+    fn order_score(&self, mv: Move, hash_move: Move, killers: [Move; 2]) -> i32 {
         if mv == hash_move {
             return ORDER_HASH_MOVE;
+        }
+        if mv == killers[0] {
+            return ORDER_KILLER_FIRST;
+        }
+        if mv == killers[1] {
+            return ORDER_KILLER_SECOND;
         }
         let kind_on = |square| {
             self.position
@@ -316,11 +333,17 @@ impl<'a> Searcher<'a> {
         score
     }
 
-    /// Returns the ordering scores of every move in `list`.
-    fn score_moves(&self, list: &MoveList, hash_move: Move) -> [i32; MoveList::CAPACITY] {
+    /// Returns the ordering scores of every move in `list`. Pass
+    /// [`Move::NULL`] for a hash move or killer that is not available.
+    fn score_moves(
+        &self,
+        list: &MoveList,
+        hash_move: Move,
+        killers: [Move; 2],
+    ) -> [i32; MoveList::CAPACITY] {
         let mut scores = [0; MoveList::CAPACITY];
         for (score, &mv) in scores.iter_mut().zip(list.iter()) {
-            *score = self.order_score(mv, hash_move);
+            *score = self.order_score(mv, hash_move, killers);
         }
         scores
     }
@@ -473,7 +496,7 @@ impl<'a> Searcher<'a> {
             Some(&mv) if ply == 0 => mv,
             _ => entry.map_or(Move::NULL, |entry| entry.mv),
         };
-        let mut scores = self.score_moves(&list, hash_move);
+        let mut scores = self.score_moves(&list, hash_move, self.killers[ply]);
 
         let mut best_score = -INFINITE;
         let mut best_move = Move::NULL;
@@ -517,6 +540,13 @@ impl<'a> Searcher<'a> {
                             .extend_from_slice(&self.pv[0][..self.pv_len[0]]);
                     }
                     if alpha >= beta {
+                        // Remember a quiet refutation as a killer. Captures
+                        // and promotions are already ordered early.
+                        let quiet = !mv.is_capture() && mv.promotion().is_none();
+                        if quiet && self.killers[ply][0] != mv {
+                            self.killers[ply][1] = self.killers[ply][0];
+                            self.killers[ply][0] = mv;
+                        }
                         break;
                     }
                 }
@@ -576,7 +606,7 @@ impl<'a> Searcher<'a> {
             generate(&self.position, GenKind::Noisy, &mut list);
         }
 
-        let mut scores = self.score_moves(&list, Move::NULL);
+        let mut scores = self.score_moves(&list, Move::NULL, [Move::NULL; 2]);
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
             self.make(mv);
