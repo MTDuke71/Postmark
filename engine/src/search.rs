@@ -18,9 +18,9 @@ use crate::eval::{Evaluator, PstEvaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
-    NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION,
-    ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION,
-    ORDER_VICTIM_WEIGHT,
+    HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR,
+    NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST,
+    ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
 };
 use crate::position::Position;
 use crate::timeman::{Limits, TimeBudget};
@@ -148,6 +148,10 @@ pub struct Searcher<'a> {
     /// Killer moves: for each ply, the two quiet moves that most recently
     /// caused a cutoff there, newest first.
     killers: [[Move; 2]; MAX_PLY + 1],
+    /// History scores of quiet moves, indexed by side to move, origin and
+    /// destination: how often the move has caused a cutoff, anywhere in
+    /// the tree, against how often it was tried and failed to.
+    history: Box<[[[i32; 64]; 64]; 2]>,
     /// For each ply, whether the node there is currently searching a null
     /// move, so that its child does not try one straight after.
     null_moved: [bool; MAX_PLY + 1],
@@ -189,6 +193,7 @@ impl<'a> Searcher<'a> {
             pv: vec![[Move::NULL; MAX_PLY]; MAX_PLY + 1],
             pv_len: [0; MAX_PLY + 1],
             killers: [[Move::NULL; 2]; MAX_PLY + 1],
+            history: Box::new([[[0; 64]; 64]; 2]),
             null_moved: [false; MAX_PLY + 1],
             root_pv: Vec::with_capacity(MAX_PLY),
         }
@@ -292,8 +297,8 @@ impl<'a> Searcher<'a> {
     /// The earlier a good move is tried, the sooner a cutoff comes and the
     /// smaller the tree. The order is the hash move, then queen promotions,
     /// then captures by most valuable victim and least valuable attacker,
-    /// then the two `killers`, then everything else in generation order
-    /// (SRC-3).
+    /// then the two `killers`, then the remaining quiet moves by their
+    /// history score (SRC-3).
     ///
     /// A killer is a quiet move that refuted a sibling position at the same
     /// ply. Sibling positions differ by one move of the opponent, so the
@@ -328,9 +333,26 @@ impl<'a> Searcher<'a> {
         match mv.promotion() {
             Some(PieceKind::Queen) => score += ORDER_QUEEN_PROMOTION,
             Some(kind) => score += kind.index() as i32,
+            None if !mv.is_capture() => {
+                let side = self.position.side_to_move().index();
+                score = self.history[side][mv.from().index()][mv.to().index()];
+            }
             None => {}
         }
         score
+    }
+
+    /// Adjusts the history score of the quiet move `mv` for the side to
+    /// move by `bonus`, which is negative for a move that failed.
+    ///
+    /// The update is `bonus - score * |bonus| / HISTORY_MAX`. The second
+    /// term pulls the score back towards zero in proportion to its size, so
+    /// it can never pass `HISTORY_MAX` in either direction, and a move's
+    /// recent record outweighs its distant past.
+    fn update_history(&mut self, mv: Move, bonus: i32) {
+        let side = self.position.side_to_move().index();
+        let score = &mut self.history[side][mv.from().index()][mv.to().index()];
+        *score += bonus - *score * bonus.abs() / HISTORY_MAX;
     }
 
     /// Returns the ordering scores of every move in `list`. Pass
@@ -500,8 +522,12 @@ impl<'a> Searcher<'a> {
 
         let mut best_score = -INFINITE;
         let mut best_move = Move::NULL;
+        // Quiet moves searched so far that did not cause a cutoff.
+        let mut failed_quiets = [Move::NULL; 64];
+        let mut failed_count = 0;
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
+            let quiet = !mv.is_capture() && mv.promotion().is_none();
             self.make(mv);
             // Principal variation search. With good move ordering the
             // first move is usually best, so the others only need to be
@@ -540,16 +566,31 @@ impl<'a> Searcher<'a> {
                             .extend_from_slice(&self.pv[0][..self.pv_len[0]]);
                     }
                     if alpha >= beta {
-                        // Remember a quiet refutation as a killer. Captures
-                        // and promotions are already ordered early.
-                        let quiet = !mv.is_capture() && mv.promotion().is_none();
-                        if quiet && self.killers[ply][0] != mv {
-                            self.killers[ply][1] = self.killers[ply][0];
-                            self.killers[ply][0] = mv;
+                        // Remember a quiet refutation. Captures and
+                        // promotions are already ordered early.
+                        if quiet {
+                            if self.killers[ply][0] != mv {
+                                self.killers[ply][1] = self.killers[ply][0];
+                                self.killers[ply][0] = mv;
+                            }
+                            // Reward the move that cut off and penalise
+                            // the quiet moves that were tried before it
+                            // and did not, so that next time, in any
+                            // position, it is tried ahead of them.
+                            let bonus =
+                                (HISTORY_BONUS_SCALE * depth * depth).min(HISTORY_BONUS_MAX);
+                            self.update_history(mv, bonus);
+                            for &failed in &failed_quiets[..failed_count] {
+                                self.update_history(failed, -bonus);
+                            }
                         }
                         break;
                     }
                 }
+            }
+            if quiet && failed_count < failed_quiets.len() {
+                failed_quiets[failed_count] = mv;
+                failed_count += 1;
             }
         }
 

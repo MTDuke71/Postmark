@@ -28,6 +28,18 @@ pub const ORDER_KILLER_FIRST: i32 = 90_000;
 /// Ordering score of the second killer move at a ply.
 pub const ORDER_KILLER_SECOND: i32 = 80_000;
 
+/// Largest magnitude a history score can reach. It must stay below
+/// [`ORDER_KILLER_SECOND`] so that history only ranks the remaining quiet
+/// moves among themselves.
+pub const HISTORY_MAX: i32 = 16_384;
+
+/// A history update is this value times the square of the remaining depth:
+/// cutoffs found by deeper searches are better evidence.
+pub const HISTORY_BONUS_SCALE: i32 = 16;
+
+/// Upper limit of a single history update.
+pub const HISTORY_BONUS_MAX: i32 = 2_000;
+
 /// Multiplier of the captured piece's kind index in a capture's ordering
 /// score. It exceeds the largest attacker index, so the victim always
 /// dominates: the order is most valuable victim first, and among equal
