@@ -11,6 +11,7 @@
 //! actually found even when that lies outside the window.
 
 use std::fmt;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -18,7 +19,8 @@ use crate::eval::{Evaluator, PstEvaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
-    HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR,
+    HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT,
+    LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR,
     NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST,
     ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
 };
@@ -45,6 +47,26 @@ pub const MATE_BOUND: i32 = MATE - MAX_PLY as i32;
 
 /// Score of a drawn position.
 pub const DRAW: i32 = 0;
+
+/// Late move reductions in plies, indexed by remaining depth and by the
+/// move's position in the ordering (both capped at 63).
+///
+/// The reduction is `base + ln(depth) * ln(move number) / divisor`, rounded
+/// down. It grows with depth, because a deep search can afford to lose more
+/// plies, and with the move number, because the later a move is ordered the
+/// less likely it is to be best. The logarithms make it grow quickly at
+/// first and slowly afterwards.
+static LMR_TABLE: LazyLock<[[u8; 64]; 64]> = LazyLock::new(|| {
+    let mut table = [[0; 64]; 64];
+    for (depth, row) in table.iter_mut().enumerate().skip(1) {
+        for (number, reduction) in row.iter_mut().enumerate().skip(1) {
+            let log = (depth as f64).ln() * (number as f64).ln();
+            let plies = LMR_BASE_PERCENT as f64 / 100.0 + log * 100.0 / LMR_DIVISOR_PERCENT as f64;
+            *reduction = plies as u8;
+        }
+    }
+    table
+});
 
 /// A progress report, produced once per completed iteration (UCI-4).
 #[derive(Clone, Debug)]
@@ -262,9 +284,13 @@ impl<'a> Searcher<'a> {
     /// them at every node would cost more than the search itself (SRC-6).
     #[inline]
     fn enter_node(&mut self) -> bool {
+        // Once interrupted, the unwinding calls are not nodes searched.
+        if self.aborted {
+            return true;
+        }
         self.nodes += 1;
-        if self.aborted || !self.may_abort {
-            return self.aborted;
+        if !self.may_abort {
+            return false;
         }
         if self.node_limit.is_some_and(|limit| self.nodes >= limit) {
             self.aborted = true;
@@ -539,10 +565,34 @@ impl<'a> Searcher<'a> {
             // null), its true score is needed, so it is searched again with
             // the full window. The re-searches cost less than the null
             // windows save.
+            //
+            // Late move reductions go a step further for quiet moves late
+            // in the ordering: the null-window search is also made
+            // shallower. Almost all such moves fail low and are dismissed
+            // cheaply. One that unexpectedly beats alpha is searched again
+            // at full depth before it is believed, so a reduction can cost
+            // time but cannot by itself change the result. Moves are not
+            // reduced when in check or when they give check, where a
+            // shallow search is most likely to miss something, and the
+            // reduced depth never drops below one ply, so the move still
+            // gets a real search rather than quiescence only.
             let score = if index == 0 {
                 -self.negamax(depth - 1, ply + 1, -beta, -alpha)
             } else {
-                let probe = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                let mut reduction = 0;
+                if quiet
+                    && depth >= LMR_MIN_DEPTH
+                    && index >= LMR_FULL_DEPTH_MOVES
+                    && !in_check
+                    && !self.position.in_check()
+                {
+                    let table = LMR_TABLE[depth.min(63) as usize][index.min(63)] as i32;
+                    reduction = table.min(depth - 2);
+                }
+                let mut probe = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+                if reduction > 0 && probe > alpha {
+                    probe = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                }
                 if probe > alpha && probe < beta {
                     -self.negamax(depth - 1, ply + 1, -beta, -alpha)
                 } else {

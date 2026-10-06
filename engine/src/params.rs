@@ -57,6 +57,19 @@ pub const NULL_MOVE_REDUCTION: i32 = 3;
 /// remaining depth.
 pub const NULL_MOVE_DEPTH_DIVISOR: i32 = 4;
 
+/// Least remaining depth at which late move reductions apply.
+pub const LMR_MIN_DEPTH: i32 = 3;
+
+/// Number of moves searched at full depth before reductions begin.
+pub const LMR_FULL_DEPTH_MOVES: usize = 3;
+
+/// Constant term of the late-move-reduction formula, in hundredths of a ply.
+pub const LMR_BASE_PERCENT: i32 = 75;
+
+/// Divisor of the logarithmic term of the late-move-reduction formula, in
+/// hundredths: the reduction is `base + ln(depth) * ln(move number) / divisor`.
+pub const LMR_DIVISOR_PERCENT: i32 = 225;
+
 /// Number of moves the remaining time is spread over when the time control
 /// does not say how many moves are left.
 pub const TIME_MOVES_TO_GO: u64 = 20;
