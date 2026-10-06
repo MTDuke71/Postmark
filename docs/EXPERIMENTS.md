@@ -21,6 +21,14 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 8 | Futility pruning | pass | +9.9 ± 6.9 | 4504 | 1194 / 1066 / 2244 | 2.94 | 248136 | c88d0bf |
 | 9 | SEE pruning in quiescence | pass | +22.0 ± 11.3 | 1692 | 496 / 389 / 807 | 2.97 | 100340 | 94a8b24 |
 | 10 | SEE capture ordering (losing captures last) | pass | +38.6 ± 15.2 | 914 | 284 / 183 / 447 | 2.95 | 97142 | 8ccaf41 |
+| 11 | Check extension (unrestricted, +1 ply on every checking move) | **fail** | −33.0 ± 15.1 | 1110 | 247 / 352 / 511 | −2.97 | 113718 | rejected/check-extension (ac7f26b) |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
+
+### Rejected: notes for retries
+
+- **Check extension (11).** Bench rose 17%; at 8+0.08 the extra plies cost
+  more than they found. Candidates for a retry: extend only checks with
+  SEE >= 0, cap total extension along a path, or revisit after singular
+  extensions, when the extension budget is shared.
