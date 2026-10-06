@@ -22,8 +22,8 @@ use crate::params::{
     FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY, FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX,
     HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES,
     LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH,
-    NULL_MOVE_REDUCTION, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND,
-    ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
+    NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST,
+    ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
 };
 use crate::position::Position;
 use crate::see::see_ge;
@@ -324,9 +324,16 @@ impl<'a> Searcher<'a> {
     ///
     /// The earlier a good move is tried, the sooner a cutoff comes and the
     /// smaller the tree. The order is the hash move, then queen promotions,
-    /// then captures by most valuable victim and least valuable attacker,
+    /// then captures that do not lose material by static exchange
+    /// evaluation, by most valuable victim and least valuable attacker,
     /// then the two `killers`, then the remaining quiet moves by their
-    /// history score (SRC-3).
+    /// history score (SRC-3), and last the captures that lose material,
+    /// again by victim and attacker.
+    ///
+    /// A losing capture is the least promising move in most positions: it
+    /// gives up material, and the quiet moves have a chance of keeping
+    /// it. Searching it after every quiet move means it is reached only
+    /// when nothing else has cut off, which is rare.
     ///
     /// A killer is a quiet move that refuted a sibling position at the same
     /// ply. Sibling positions differ by one move of the opponent, so the
@@ -355,7 +362,12 @@ impl<'a> Searcher<'a> {
             } else {
                 kind_on(mv.to())
             };
-            score += ORDER_CAPTURE + victim.index() as i32 * ORDER_VICTIM_WEIGHT
+            let base = if see_ge(&self.position, mv, 0) {
+                ORDER_CAPTURE
+            } else {
+                ORDER_BAD_CAPTURE
+            };
+            score += base + victim.index() as i32 * ORDER_VICTIM_WEIGHT
                 - kind_on(mv.from()).index() as i32;
         }
         match mv.promotion() {

@@ -17,9 +17,14 @@ pub const ORDER_HASH_MOVE: i32 = 1_000_000;
 /// Ordering score added to a promotion to a queen, above any capture.
 pub const ORDER_QUEEN_PROMOTION: i32 = 200_000;
 
-/// Ordering score added to every capture; the victim and attacker adjust it
-/// (see [`ORDER_VICTIM_WEIGHT`]).
+/// Ordering score added to every capture that does not lose material by
+/// static exchange evaluation; the victim and attacker adjust it (see
+/// [`ORDER_VICTIM_WEIGHT`]).
 pub const ORDER_CAPTURE: i32 = 100_000;
+
+/// Ordering score added to a capture that loses material by static
+/// exchange evaluation: below every quiet move, however poor its history.
+pub const ORDER_BAD_CAPTURE: i32 = -100_000;
 
 /// Ordering score of the first killer move at a ply: below every capture,
 /// above the other quiet moves.
