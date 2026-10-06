@@ -611,10 +611,18 @@ impl<'a> Searcher<'a> {
             let quiet = !mv.is_capture() && mv.promotion().is_none();
             self.make(mv);
             // Whether the move gives check is known only once it is made.
-            if futile && quiet && index > 0 && !self.position.in_check() {
+            let gives_check = self.position.in_check();
+            if futile && quiet && index > 0 && !gives_check {
                 self.unmake(mv);
                 continue;
             }
+            // Check extension. A move that gives check is searched one ply
+            // deeper. The reply is forced, so the extra ply costs little,
+            // and it keeps a forcing sequence (a mating attack, or a
+            // perpetual) from being cut off at the horizon one move short
+            // of its point, which the static evaluation would then
+            // misjudge badly.
+            let new_depth = depth - 1 + i32::from(gives_check);
             // Principal variation search. With good move ordering the
             // first move is usually best, so the others only need to be
             // shown to be no better. That is asked with a *null window*
@@ -637,24 +645,24 @@ impl<'a> Searcher<'a> {
             // reduced depth never drops below one ply, so the move still
             // gets a real search rather than quiescence only.
             let score = if index == 0 {
-                -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+                -self.negamax(new_depth, ply + 1, -beta, -alpha)
             } else {
                 let mut reduction = 0;
                 if quiet
                     && depth >= LMR_MIN_DEPTH
                     && index >= LMR_FULL_DEPTH_MOVES
                     && !in_check
-                    && !self.position.in_check()
+                    && !gives_check
                 {
                     let table = LMR_TABLE[depth.min(63) as usize][index.min(63)] as i32;
                     reduction = table.min(depth - 2);
                 }
-                let mut probe = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+                let mut probe = -self.negamax(new_depth - reduction, ply + 1, -alpha - 1, -alpha);
                 if reduction > 0 && probe > alpha {
-                    probe = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                    probe = -self.negamax(new_depth, ply + 1, -alpha - 1, -alpha);
                 }
                 if probe > alpha && probe < beta {
-                    -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+                    -self.negamax(new_depth, ply + 1, -beta, -alpha)
                 } else {
                     probe
                 }
