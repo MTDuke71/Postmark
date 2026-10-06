@@ -1,6 +1,6 @@
 # Postmark — Engine Specification
 
-Status: **Agreed 1.2** (2026-10-05)
+Status: **Agreed 1.3** (2026-10-05)
 
 Postmark is a UCI chess engine written in Rust. Its single yardstick is playing
 strength: a change that affects play is accepted only if it is shown to gain
@@ -17,7 +17,7 @@ otherwise.
 | ID | Requirement |
 |----|-------------|
 | PRN-1 | Playing strength is the primary goal. Where clarity and speed conflict in a hot path, speed wins; everywhere else, write idiomatic Rust. |
-| PRN-2 | The design is clean-room. No code is ported from Huginn or any other engine; Huginn is used only as a test opponent. |
+| PRN-2 | All code is written fresh for Postmark; none is copied or ported from Huginn or any other engine. Huginn may be used as a test opponent, and its experiment record and design notes may be consulted to decide what to try and in what order. Whatever is tried must still pass Postmark's own SPRT gate. |
 | PRN-9 | Postmark is released into the public domain under the Unlicense. No GPL or other copyleft code may be copied or linked into it; any dependency or embedded data (including NNUE training data and networks) must be under a licence compatible with that. |
 | PRN-3 | The engine crate has **zero runtime dependencies**. Exceptions must be listed in this document (currently: Syzygy probing, §9.2). Dev-, build- and tooling-only dependencies are permitted. |
 | PRN-4 | `unsafe` is permitted in hot paths (unchecked indexing, SIMD intrinsics, transposition-table access) only when it is benchmarked as a win and carries a `// SAFETY:` comment stating the invariant relied upon. |
