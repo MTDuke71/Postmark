@@ -46,6 +46,12 @@ pub const HISTORY_BONUS_MAX: i32 = 2_000;
 /// victims the least valuable attacker first (MVV-LVA).
 pub const ORDER_VICTIM_WEIGHT: i32 = 8;
 
+/// Greatest remaining depth at which reverse futility pruning applies.
+pub const RFP_MAX_DEPTH: i32 = 7;
+
+/// Reverse futility margin in centipawns per ply of remaining depth.
+pub const RFP_MARGIN: i32 = 80;
+
 /// Least remaining depth at which null-move pruning is tried.
 pub const NULL_MOVE_MIN_DEPTH: i32 = 3;
 

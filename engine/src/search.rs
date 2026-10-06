@@ -22,7 +22,7 @@ use crate::params::{
     HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT,
     LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR,
     NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST,
-    ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
+    ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
 };
 use crate::position::Position;
 use crate::timeman::{Limits, TimeBudget};
@@ -479,6 +479,28 @@ impl<'a> Searcher<'a> {
         }
 
         let in_check = self.position.in_check();
+        // Not meaningful in check, where it is never used.
+        let static_eval = if in_check {
+            -INFINITE
+        } else {
+            self.evaluator.evaluate(&self.position)
+        };
+
+        // Reverse futility pruning. Near the horizon, if the static
+        // evaluation is above beta by more than the opponent could
+        // plausibly win back in the remaining depth, the node is assumed to
+        // fail high without searching it. The margin grows with depth
+        // because more can change in a deeper search. It is skipped in
+        // check, in PV nodes, which need exact scores, and when beta is a
+        // mate score, which no evaluation margin can justify.
+        if !in_check
+            && beta - alpha == 1
+            && depth <= RFP_MAX_DEPTH
+            && beta.abs() < MATE_BOUND
+            && static_eval - RFP_MARGIN * depth >= beta
+        {
+            return static_eval;
+        }
 
         // Null-move pruning. Having the move is almost always an advantage,
         // so if the side to move can pass and a reduced search still scores
@@ -507,7 +529,7 @@ impl<'a> Searcher<'a> {
             && ply > 0
             && !self.null_moved[ply - 1]
             && self.position.has_non_pawn_material(side)
-            && self.evaluator.evaluate(&self.position) >= beta
+            && static_eval >= beta
         {
             let reduction = NULL_MOVE_REDUCTION + depth / NULL_MOVE_DEPTH_DIVISOR;
             self.null_moved[ply] = true;
