@@ -447,7 +447,7 @@ impl<'a> Searcher<'a> {
     ///
     /// If the search has been interrupted the return value is meaningless
     /// and must be discarded; callers check `self.aborted`.
-    fn negamax(&mut self, depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
+    fn negamax(&mut self, depth: i32, ply: usize, mut alpha: i32, mut beta: i32) -> i32 {
         if depth <= 0 {
             return self.quiescence(ply, alpha, beta);
         }
@@ -464,6 +464,19 @@ impl<'a> Searcher<'a> {
             }
             if ply >= MAX_PLY {
                 return self.evaluator.evaluate(&self.position);
+            }
+
+            // Mate-distance pruning. No line from here can score better
+            // than mating on the next move, or worse than being mated on
+            // the next move, so the window is clamped to those values. If
+            // a shorter mate has already been found elsewhere, the window
+            // becomes empty and the node is cut off at once: nothing it
+            // could find would be preferred. This only prunes lines that
+            // cannot change the result, so it is exact.
+            alpha = alpha.max(-MATE + ply as i32);
+            beta = beta.min(MATE - ply as i32 - 1);
+            if alpha >= beta {
+                return alpha;
             }
         }
 
