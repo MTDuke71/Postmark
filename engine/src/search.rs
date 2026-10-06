@@ -19,10 +19,11 @@ use crate::eval::{Evaluator, PstEvaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
-    HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT,
-    LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR,
-    NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST,
-    ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
+    FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY, FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX,
+    HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES,
+    LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH,
+    NULL_MOVE_REDUCTION, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND,
+    ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
 };
 use crate::position::Position;
 use crate::timeman::{Limits, TimeBudget};
@@ -568,6 +569,25 @@ impl<'a> Searcher<'a> {
         };
         let mut scores = self.score_moves(&list, hash_move, self.killers[ply]);
 
+        // Futility pruning. Near the horizon, a quiet move is unlikely to
+        // raise the score above alpha when the static evaluation is below
+        // alpha by more than a quiet move could plausibly gain in the
+        // remaining depth, so such moves are skipped. The margin grows
+        // with depth because more can change in a deeper search. Captures
+        // and promotions are always searched, since they can change the
+        // material balance at once, and so are moves that give check,
+        // whose consequences a static evaluation cannot see. Only moves
+        // are pruned, never the node: the first move is always searched,
+        // so the node still has a real score and a move to store. The
+        // pruning is skipped in check, where every move is an evasion, in
+        // PV nodes, which need exact scores, and when alpha is a mate
+        // score, which no evaluation margin can relate to.
+        let futile = !in_check
+            && beta - alpha == 1
+            && depth <= FUTILITY_MAX_DEPTH
+            && alpha.abs() < MATE_BOUND
+            && static_eval + FUTILITY_MARGIN_BASE + FUTILITY_MARGIN_PER_PLY * depth <= alpha;
+
         let mut best_score = -INFINITE;
         let mut best_move = Move::NULL;
         // Quiet moves searched so far that did not cause a cutoff.
@@ -577,6 +597,11 @@ impl<'a> Searcher<'a> {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
             let quiet = !mv.is_capture() && mv.promotion().is_none();
             self.make(mv);
+            // Whether the move gives check is known only once it is made.
+            if futile && quiet && index > 0 && !self.position.in_check() {
+                self.unmake(mv);
+                continue;
+            }
             // Principal variation search. With good move ordering the
             // first move is usually best, so the others only need to be
             // shown to be no better. That is asked with a *null window*

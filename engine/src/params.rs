@@ -52,6 +52,15 @@ pub const RFP_MAX_DEPTH: i32 = 7;
 /// Reverse futility margin in centipawns per ply of remaining depth.
 pub const RFP_MARGIN: i32 = 80;
 
+/// Greatest remaining depth at which futility pruning applies.
+pub const FUTILITY_MAX_DEPTH: i32 = 3;
+
+/// Constant term of the futility margin in centipawns.
+pub const FUTILITY_MARGIN_BASE: i32 = 100;
+
+/// Futility margin added per ply of remaining depth, in centipawns.
+pub const FUTILITY_MARGIN_PER_PLY: i32 = 50;
+
 /// Least remaining depth at which null-move pruning is tried.
 pub const NULL_MOVE_MIN_DEPTH: i32 = 3;
 
