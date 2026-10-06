@@ -19,6 +19,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 6 | Late move reductions | pass | +101.9 ± 23.5 | 484 | 215 / 77 / 192 | 2.95 | 388300 | ff35fb0 |
 | 7 | Reverse futility pruning | pass | +80.4 ± 20.4 | 510 | 186 / 70 / 254 | 2.95 | 265027 | c669351 |
 | 8 | Futility pruning | pass | +9.9 ± 6.9 | 4504 | 1194 / 1066 / 2244 | 2.94 | 248136 | c88d0bf |
+| 9 | SEE pruning in quiescence | pass | +22.0 ± 11.3 | 1692 | 496 / 389 / 807 | 2.97 | 100340 | 94a8b24 |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
