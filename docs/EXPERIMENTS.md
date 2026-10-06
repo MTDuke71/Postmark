@@ -22,6 +22,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 9 | SEE pruning in quiescence | pass | +22.0 ± 11.3 | 1692 | 496 / 389 / 807 | 2.97 | 100340 | 94a8b24 |
 | 10 | SEE capture ordering (losing captures last) | pass | +38.6 ± 15.2 | 914 | 284 / 183 / 447 | 2.95 | 97142 | 8ccaf41 |
 | 11 | Check extension (unrestricted, +1 ply on every checking move) | **fail** | −33.0 ± 15.1 | 1110 | 247 / 352 / 511 | −2.97 | 113718 | rejected/check-extension (ac7f26b) |
+| 12 | Mate-distance pruning | stopped (undecided) | +2.7 ± 4.0 | 13500 | 3635 / 3531 / 6334 | 0.22 | 97142 | rejected/mate-distance-pruning (343acc8) |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
@@ -32,3 +33,7 @@ column does not sum. Bench is the fixed-depth node count (TST-2).
   more than they found. Candidates for a retry: extend only checks with
   SEE >= 0, cap total extension along a path, or revisit after singular
   extensions, when the extension budget is shared.
+- **Mate-distance pruning (12).** Stopped after 13,500 games and 11.5 hours
+  with LLR 0.22: a gain of about +2.7 Elo (LOS 91%) that [0, 5] cannot
+  decide. Exact and harmless; retry bundled with another change, or as a
+  [-5, 0] non-regression test.
