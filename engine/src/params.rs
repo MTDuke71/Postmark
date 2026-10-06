@@ -111,3 +111,8 @@ pub const DEFAULT_MOVE_OVERHEAD_MS: u64 = 10;
 
 /// Default transposition table size in megabytes.
 pub const DEFAULT_HASH_MB: usize = 16;
+
+/// Piece values used by static exchange evaluation, by piece kind
+/// (pawn ... king). A capturing king is handled by the exchange logic, so
+/// its value is never used.
+pub const SEE_VALUE: [i32; 6] = [100, 320, 335, 500, 975, 0];

@@ -16,6 +16,7 @@ pub mod perft;
 pub mod position;
 pub mod rng;
 pub mod search;
+pub mod see;
 pub mod timeman;
 pub mod tt;
 pub mod types;

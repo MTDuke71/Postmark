@@ -26,6 +26,7 @@ use crate::params::{
     ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
 };
 use crate::position::Position;
+use crate::see::see_ge;
 use crate::timeman::{Limits, TimeBudget};
 use crate::tt::{Bound, TranspositionTable};
 use crate::types::PieceKind;
@@ -747,6 +748,15 @@ impl<'a> Searcher<'a> {
         let mut scores = self.score_moves(&list, Move::NULL, [Move::NULL; 2]);
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
+            // A capture that loses material by static exchange evaluation
+            // is almost never the move that raises the score here: the
+            // stand-pat score already offers what declining it gives.
+            // Skipping such captures cuts the quiescence tree sharply at
+            // little cost. Evasions are never skipped, since in check
+            // there is no stand pat to fall back on.
+            if !in_check && mv.is_capture() && !see_ge(&self.position, mv, 0) {
+                continue;
+            }
             self.make(mv);
             let score = -self.quiescence(ply + 1, -beta, -alpha);
             self.unmake(mv);
