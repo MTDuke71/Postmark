@@ -689,10 +689,29 @@ impl<'a> Searcher<'a> {
             }
             self.make(mv);
             // Whether the move gives check is known only once it is made.
-            if futile && quiet && index > 0 && !self.position.in_check() {
+            let gives_check = self.position.in_check();
+            if futile && quiet && index > 0 && !gives_check {
                 self.unmake(mv);
                 continue;
             }
+            // Check extension. A move that gives check without hanging the
+            // checking piece is searched one ply deeper. The reply is
+            // forced, so the extra ply costs little, and it keeps a
+            // forcing sequence from being cut off at the horizon one move
+            // short of its point. Checks that lose material by static
+            // exchange are left alone: most are spite checks that only
+            // delay the inevitable, and extending every one of them cost
+            // more depth than it found (see docs/EXPERIMENTS.md, run 11).
+            // The exchange is evaluated in the position before the move,
+            // so the move is briefly taken back; checks are rare enough
+            // for that to be cheap.
+            let extend = gives_check && {
+                self.unmake(mv);
+                let safe = see_ge(&self.position, mv, 0);
+                self.make(mv);
+                safe
+            };
+            let new_depth = depth - 1 + i32::from(extend);
             // Principal variation search. With good move ordering the
             // first move is usually best, so the others only need to be
             // shown to be no better. That is asked with a *null window*
@@ -715,24 +734,24 @@ impl<'a> Searcher<'a> {
             // reduced depth never drops below one ply, so the move still
             // gets a real search rather than quiescence only.
             let score = if index == 0 {
-                -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+                -self.negamax(new_depth, ply + 1, -beta, -alpha)
             } else {
                 let mut reduction = 0;
                 if quiet
                     && depth >= LMR_MIN_DEPTH
                     && index >= LMR_FULL_DEPTH_MOVES
                     && !in_check
-                    && !self.position.in_check()
+                    && !gives_check
                 {
                     let table = LMR_TABLE[depth.min(63) as usize][index.min(63)] as i32;
                     reduction = table.min(depth - 2);
                 }
-                let mut probe = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+                let mut probe = -self.negamax(new_depth - reduction, ply + 1, -alpha - 1, -alpha);
                 if reduction > 0 && probe > alpha {
-                    probe = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                    probe = -self.negamax(new_depth, ply + 1, -alpha - 1, -alpha);
                 }
                 if probe > alpha && probe < beta {
-                    -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+                    -self.negamax(new_depth, ply + 1, -beta, -alpha)
                 } else {
                     probe
                 }
