@@ -30,6 +30,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 17 | Late move pruning (depth <= 6, 3 + depth² quiets searched) | pass | +57.9 ± 18.2 | 642 | 226 / 120 / 296 | 2.97 | 57419 | 71d5cff |
 | 18 | Continuation history retry (1-ply, i16) | **fail** (stopped at LLR −1.56) | −2.1 ± 7.5 | 4000 | 1030 / 1054 / 1916 | −1.56 | 57041 | rejected/continuation-history-1ply (13d3fe9) |
 | 19 | Check extension retry (SEE >= 0 checks only) | pass | +10.6 ± 7.3 | 4402 | 1223 / 1089 / 2090 | 2.95 | 61401 | ad13a15 |
+| 20 | Mate-distance pruning retry, bounds [−5, 0] | pass | +10.1 ± 9.0 | 2578 | 713 / 638 / 1227 | 2.96 | 61401 | 8fa236c |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
