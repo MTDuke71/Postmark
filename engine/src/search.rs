@@ -24,7 +24,8 @@ use crate::params::{
     LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK,
     NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE,
     ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION,
-    ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
+    ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH, SE_MARGIN_PER_PLY, SE_MIN_DEPTH,
+    SE_TT_DEPTH_SLACK,
 };
 use crate::position::Position;
 use crate::see::see_ge;
@@ -180,6 +181,10 @@ pub struct Searcher<'a> {
     /// For each ply, whether the node there is currently searching a null
     /// move, so that its child does not try one straight after.
     null_moved: [bool; MAX_PLY + 1],
+    /// For each ply, a move the node there must not search, or `NULL`: set
+    /// while the node runs the exclusion search that tests whether its
+    /// hash move is singular.
+    excluded: [Move; MAX_PLY + 1],
     /// Best line from the root that is safe to play: taken from the last
     /// completed iteration, or from the current one once a root move has
     /// been fully searched and found best (SRC-6).
@@ -220,6 +225,7 @@ impl<'a> Searcher<'a> {
             killers: [[Move::NULL; 2]; MAX_PLY + 1],
             history: Box::new([[[0; 64]; 64]; 2]),
             null_moved: [false; MAX_PLY + 1],
+            excluded: [Move::NULL; MAX_PLY + 1],
             root_pv: Vec::with_capacity(MAX_PLY),
         }
     }
@@ -526,7 +532,13 @@ impl<'a> Searcher<'a> {
         // since it must produce a move, not just a score.
         let key = self.position.key();
         let entry = self.table.probe(key, ply);
+        // In an exclusion search (see the singular extension below) the
+        // table entry describes the position *with* the excluded move, so
+        // it cannot answer for the position without it.
+        let excluded = self.excluded[ply];
+        let excluding = excluded != Move::NULL;
         if ply > 0
+            && !excluding
             && let Some(entry) = entry
             && entry.depth >= depth
         {
@@ -603,6 +615,7 @@ impl<'a> Searcher<'a> {
             && beta - alpha == 1
             && depth >= NULL_MOVE_MIN_DEPTH
             && ply > 0
+            && !excluding
             && !self.null_moved[ply - 1]
             && self.position.has_non_pawn_material(side)
             && static_eval >= beta
@@ -644,6 +657,44 @@ impl<'a> Searcher<'a> {
         };
         let mut scores = self.score_moves(&list, hash_move, self.killers[ply]);
 
+        // Singular extension. If the hash move was found clearly best by a
+        // search nearly as deep as this one, it may be the *only* good
+        // move, and then a position in which it is refuted a few plies
+        // deeper would be misjudged: every other move loses too. To find
+        // out, the node is searched again at half depth with the hash
+        // move excluded and a window just below the hash move's score
+        // less a margin. If nothing else reaches that score, the hash
+        // move is singular and is searched one ply deeper. The exclusion
+        // search is a search of this node and leaves its principal
+        // variation behind, which is cleared. It is not done inside an
+        // exclusion search, or where the hash move is a mate, which no
+        // margin can relate to.
+        let mut extension = 0;
+        if !excluding
+            && ply > 0
+            && depth >= SE_MIN_DEPTH
+            && hash_move != Move::NULL
+            && let Some(entry) = entry
+            && entry.mv == hash_move
+            && entry.depth >= depth - SE_TT_DEPTH_SLACK
+            && matches!(entry.bound, Bound::Lower | Bound::Exact)
+            && entry.score.abs() < MATE_BOUND
+            && list.contains(&hash_move)
+        {
+            let singular_beta = entry.score - SE_MARGIN_PER_PLY * depth;
+            let singular_depth = (depth - 1) / 2;
+            self.excluded[ply] = hash_move;
+            let score = self.negamax(singular_depth, ply, singular_beta - 1, singular_beta);
+            self.excluded[ply] = Move::NULL;
+            self.pv_len[ply] = 0;
+            if self.aborted {
+                return DRAW;
+            }
+            if score < singular_beta {
+                extension = 1;
+            }
+        }
+
         // Futility pruning. Near the horizon, a quiet move is unlikely to
         // raise the score above alpha when the static evaluation is below
         // alpha by more than a quiet move could plausibly gain in the
@@ -668,9 +719,16 @@ impl<'a> Searcher<'a> {
         // Quiet moves searched so far that did not cause a cutoff.
         let mut failed_quiets = [Move::NULL; 64];
         let mut failed_count = 0;
+        // Moves searched so far; differs from `index` in an exclusion
+        // search, where the hash move is skipped.
+        let mut searched = 0;
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
+            if mv == excluded {
+                continue;
+            }
             let quiet = !mv.is_capture() && mv.promotion().is_none();
+            let new_depth = depth - 1 + if mv == hash_move { extension } else { 0 };
             self.make(mv);
             // Whether the move gives check is known only once it is made.
             if futile && quiet && index > 0 && !self.position.in_check() {
@@ -698,8 +756,8 @@ impl<'a> Searcher<'a> {
             // shallow search is most likely to miss something, and the
             // reduced depth never drops below one ply, so the move still
             // gets a real search rather than quiescence only.
-            let score = if index == 0 {
-                -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+            let score = if searched == 0 {
+                -self.negamax(new_depth, ply + 1, -beta, -alpha)
             } else {
                 let mut reduction = 0;
                 if quiet
@@ -711,17 +769,18 @@ impl<'a> Searcher<'a> {
                     let table = LMR_TABLE[depth.min(63) as usize][index.min(63)] as i32;
                     reduction = table.min(depth - 2);
                 }
-                let mut probe = -self.negamax(depth - 1 - reduction, ply + 1, -alpha - 1, -alpha);
+                let mut probe = -self.negamax(new_depth - reduction, ply + 1, -alpha - 1, -alpha);
                 if reduction > 0 && probe > alpha {
-                    probe = -self.negamax(depth - 1, ply + 1, -alpha - 1, -alpha);
+                    probe = -self.negamax(new_depth, ply + 1, -alpha - 1, -alpha);
                 }
                 if probe > alpha && probe < beta {
-                    -self.negamax(depth - 1, ply + 1, -beta, -alpha)
+                    -self.negamax(new_depth, ply + 1, -beta, -alpha)
                 } else {
                     probe
                 }
             };
             self.unmake(mv);
+            searched += 1;
             if self.aborted {
                 return DRAW;
             }
@@ -773,8 +832,10 @@ impl<'a> Searcher<'a> {
         } else {
             Bound::Upper
         };
-        self.table
-            .store(key, best_move, best_score, depth, bound, ply);
+        if !excluding {
+            self.table
+                .store(key, best_move, best_score, depth, bound, ply);
+        }
         best_score
     }
 

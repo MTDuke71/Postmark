@@ -63,6 +63,18 @@ pub const ASPIRATION_WINDOW: i32 = 50;
 /// one ply shallower (internal iterative reduction).
 pub const IIR_MIN_DEPTH: i32 = 4;
 
+/// Least remaining depth at which a hash move is tested for being
+/// singular.
+pub const SE_MIN_DEPTH: i32 = 8;
+
+/// How many plies shallower than the current depth the table entry may be
+/// for its move to be tested for singularity.
+pub const SE_TT_DEPTH_SLACK: i32 = 3;
+
+/// Margin below the hash move's score, in centipawns per ply of remaining
+/// depth, that no other move may reach for the hash move to be singular.
+pub const SE_MARGIN_PER_PLY: i32 = 2;
+
 /// Greatest remaining depth at which reverse futility pruning applies.
 pub const RFP_MAX_DEPTH: i32 = 7;
 
