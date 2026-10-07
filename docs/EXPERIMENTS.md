@@ -26,6 +26,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 13 | Continuation history (1- and 2-ply, i32, bounded) | **fail** (stopped at LLR −2.46) | −6.5 ± 8.4 | 3200 | 808 / 868 / 1524 | −2.46 | 97416 | rejected/continuation-history (72388e0) |
 | 14 | Aspiration windows (depth >= 6, ±50, failing side ×2) | pass | +17.6 ± 9.9 | 2256 | 652 / 538 / 1066 | 2.96 | 96965 | 41fc9a6 |
 | 15 | Internal iterative reductions (depth >= 4, no hash move) | pass | +13.2 ± 8.3 | 3244 | 950 / 827 / 1467 | 2.96 | 91901 | df08cf4 |
+| 16 | Singular extensions (depth >= 8, TT depth >= depth−3, margin 2·depth) | **fail** | −11.3 ± 9.5 | 2190 | 511 / 582 / 1097 | −2.96 | 91901 | rejected/singular-extensions (4da447e) |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
@@ -46,3 +47,8 @@ column does not sum. Bench is the fixed-depth node count (TST-2).
   table reads cost more than they save. Retry with i16 entries, with only
   the one-ply entry (or a down-weighted two-ply one), and after the later
   pruning features, when ordering matters more.
+- **Singular extensions (16).** -11 Elo with Huginn's recipe. At 8+0.08
+  most iterations end at depth 8-12, so the exclusion search runs only
+  near the root, where it costs the most and extends the least. Retry at
+  a longer time control or with a higher minimum depth; the TT is already
+  depth-preferred, so Huginn's starvation problem does not apply.
