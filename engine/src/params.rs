@@ -51,6 +51,14 @@ pub const HISTORY_BONUS_MAX: i32 = 2_000;
 /// victims the least valuable attacker first (MVV-LVA).
 pub const ORDER_VICTIM_WEIGHT: i32 = 8;
 
+/// First iteration searched with an aspiration window around the previous
+/// iteration's score rather than the full window.
+pub const ASPIRATION_MIN_DEPTH: i32 = 6;
+
+/// Half-width of the initial aspiration window, in centipawns. It doubles
+/// on each failed attempt.
+pub const ASPIRATION_WINDOW: i32 = 50;
+
 /// Greatest remaining depth at which reverse futility pruning applies.
 pub const RFP_MAX_DEPTH: i32 = 7;
 

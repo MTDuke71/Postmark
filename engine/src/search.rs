@@ -19,11 +19,12 @@ use crate::eval::{Evaluator, PstEvaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
-    FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY, FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX,
-    HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES,
-    LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH,
-    NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE, ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST,
-    ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
+    ASPIRATION_MIN_DEPTH, ASPIRATION_WINDOW, FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY,
+    FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT,
+    LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK,
+    NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE,
+    ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION,
+    ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
 };
 use crate::position::Position;
 use crate::see::see_ge;
@@ -243,7 +244,7 @@ impl<'a> Searcher<'a> {
         for depth in 1..=self.max_depth {
             self.seldepth = 0;
             self.may_abort = depth > 1;
-            let score = self.negamax(depth, 0, -INFINITE, INFINITE);
+            let score = self.search_root(depth, result.score);
             if self.aborted {
                 break;
             }
@@ -276,6 +277,54 @@ impl<'a> Searcher<'a> {
         result.best_move = self.root_pv.first().copied();
         result.nodes = self.nodes;
         result
+    }
+
+    /// Searches the root to `depth` and returns its score, given `guess`,
+    /// the score of the previous iteration.
+    ///
+    /// From [`ASPIRATION_MIN_DEPTH`] on, the search is first tried with a
+    /// narrow *aspiration window* around the previous score. The score
+    /// rarely moves far from one iteration to the next, and a narrow
+    /// window makes every node cut off sooner, so the iteration is much
+    /// cheaper when the guess holds. When it does not, the search fails
+    /// outside the window and is repeated with that side of the window
+    /// widened, doubling the margin each time, until it either returns a
+    /// score inside the window or the window has grown to the full range.
+    /// Only the failing side moves, so the other bound keeps its
+    /// cutoffs. A mate score is far from any guess, so the window is
+    /// opened fully as soon as a bound reaches the mate range.
+    ///
+    /// Shallow iterations use the full window: they are cheap, and their
+    /// scores are too unsettled for a guess to be worth much.
+    fn search_root(&mut self, depth: i32, guess: i32) -> i32 {
+        if depth < ASPIRATION_MIN_DEPTH {
+            return self.negamax(depth, 0, -INFINITE, INFINITE);
+        }
+        let mut delta = ASPIRATION_WINDOW;
+        let mut alpha = (guess - delta).max(-INFINITE);
+        let mut beta = (guess + delta).min(INFINITE);
+        loop {
+            let score = self.negamax(depth, 0, alpha, beta);
+            if self.aborted {
+                return score;
+            }
+            if score <= alpha {
+                alpha = if score.abs() >= MATE_BOUND {
+                    -INFINITE
+                } else {
+                    (alpha - delta).max(-INFINITE)
+                };
+            } else if score >= beta {
+                beta = if score.abs() >= MATE_BOUND {
+                    INFINITE
+                } else {
+                    (beta + delta).min(INFINITE)
+                };
+            } else {
+                return score;
+            }
+            delta *= 2;
+        }
     }
 
     /// Counts a node and reports whether the search has been interrupted.
