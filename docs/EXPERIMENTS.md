@@ -24,6 +24,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 11 | Check extension (unrestricted, +1 ply on every checking move) | **fail** | −33.0 ± 15.1 | 1110 | 247 / 352 / 511 | −2.97 | 113718 | rejected/check-extension (ac7f26b) |
 | 12 | Mate-distance pruning | stopped (undecided) | +2.7 ± 4.0 | 13500 | 3635 / 3531 / 6334 | 0.22 | 97142 | rejected/mate-distance-pruning (343acc8) |
 | 13 | Continuation history (1- and 2-ply, i32, bounded) | **fail** (stopped at LLR −2.46) | −6.5 ± 8.4 | 3200 | 808 / 868 / 1524 | −2.46 | 97416 | rejected/continuation-history (72388e0) |
+| 14 | Aspiration windows (depth >= 6, ±50, failing side ×2) | pass | +17.6 ± 9.9 | 2256 | 652 / 538 / 1066 | 2.96 | 96965 | 41fc9a6 |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
