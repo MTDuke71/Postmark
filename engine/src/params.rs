@@ -63,6 +63,17 @@ pub const ASPIRATION_WINDOW: i32 = 50;
 /// one ply shallower (internal iterative reduction).
 pub const IIR_MIN_DEPTH: i32 = 4;
 
+/// Greatest remaining depth at which late move pruning applies.
+pub const LMP_MAX_DEPTH: i32 = 6;
+
+/// Number of quiet moves searched before late move pruning can begin,
+/// before the depth-dependent part (see [`LMP_DEPTH_SCALE`]).
+pub const LMP_BASE: i32 = 3;
+
+/// Late move pruning allows this many more quiet moves per square of the
+/// remaining depth.
+pub const LMP_DEPTH_SCALE: i32 = 1;
+
 /// Greatest remaining depth at which reverse futility pruning applies.
 pub const RFP_MAX_DEPTH: i32 = 7;
 

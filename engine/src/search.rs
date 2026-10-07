@@ -21,10 +21,11 @@ use crate::moves::{Move, MoveList};
 use crate::params::{
     ASPIRATION_MIN_DEPTH, ASPIRATION_WINDOW, FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY,
     FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, IIR_MIN_DEPTH,
-    LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK,
-    NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE,
-    ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION,
-    ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
+    LMP_BASE, LMP_DEPTH_SCALE, LMP_MAX_DEPTH, LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT,
+    LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK, NULL_MOVE_DEPTH_DIVISOR,
+    NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE, ORDER_CAPTURE, ORDER_HASH_MOVE,
+    ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION, ORDER_VICTIM_WEIGHT,
+    RFP_MARGIN, RFP_MAX_DEPTH,
 };
 use crate::position::Position;
 use crate::see::see_ge;
@@ -668,9 +669,24 @@ impl<'a> Searcher<'a> {
         // Quiet moves searched so far that did not cause a cutoff.
         let mut failed_quiets = [Move::NULL; 64];
         let mut failed_count = 0;
+        // Late move pruning. Near the horizon in a non-PV node, once a
+        // number of quiet moves have been searched and none has beaten
+        // alpha, the remaining quiet moves, which the ordering ranks
+        // lower still, are skipped outright. The number grows with the
+        // square of the depth, since a deeper search has more to lose
+        // from a wrong skip. Captures and promotions are never skipped,
+        // and nothing is skipped in check. It is the quiet moves
+        // *searched* that are counted, not the position in the list, so
+        // moves skipped for other reasons do not use up the allowance.
+        let prune_late = !in_check && beta - alpha == 1 && depth <= LMP_MAX_DEPTH;
+        let late_limit = LMP_BASE + LMP_DEPTH_SCALE * depth * depth;
+        let mut quiets_searched = 0;
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
             let quiet = !mv.is_capture() && mv.promotion().is_none();
+            if prune_late && quiet && quiets_searched >= late_limit {
+                continue;
+            }
             self.make(mv);
             // Whether the move gives check is known only once it is made.
             if futile && quiet && index > 0 && !self.position.in_check() {
@@ -722,6 +738,9 @@ impl<'a> Searcher<'a> {
                 }
             };
             self.unmake(mv);
+            if quiet {
+                quiets_searched += 1;
+            }
             if self.aborted {
                 return DRAW;
             }
