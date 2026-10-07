@@ -27,6 +27,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 14 | Aspiration windows (depth >= 6, ±50, failing side ×2) | pass | +17.6 ± 9.9 | 2256 | 652 / 538 / 1066 | 2.96 | 96965 | 41fc9a6 |
 | 15 | Internal iterative reductions (depth >= 4, no hash move) | pass | +13.2 ± 8.3 | 3244 | 950 / 827 / 1467 | 2.96 | 91901 | df08cf4 |
 | 16 | Singular extensions (depth >= 8, TT depth >= depth−3, margin 2·depth) | **fail** | −11.3 ± 9.5 | 2190 | 511 / 582 / 1097 | −2.96 | 91901 | rejected/singular-extensions (4da447e) |
+| 17 | Late move pruning (depth <= 6, 3 + depth² quiets searched) | pass | +57.9 ± 18.2 | 642 | 226 / 120 / 296 | 2.97 | 57419 | 71d5cff |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
