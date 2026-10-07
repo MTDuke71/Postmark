@@ -23,6 +23,7 @@ until an unrelated fix made them gain (see LESSONS_LEARNED.md §2).
 | 10 | SEE capture ordering (losing captures last) | pass | +38.6 ± 15.2 | 914 | 284 / 183 / 447 | 2.95 | 97142 | 8ccaf41 |
 | 11 | Check extension (unrestricted, +1 ply on every checking move) | **fail** | −33.0 ± 15.1 | 1110 | 247 / 352 / 511 | −2.97 | 113718 | rejected/check-extension (ac7f26b) |
 | 12 | Mate-distance pruning | stopped (undecided) | +2.7 ± 4.0 | 13500 | 3635 / 3531 / 6334 | 0.22 | 97142 | rejected/mate-distance-pruning (343acc8) |
+| 13 | Continuation history (1- and 2-ply, i32, bounded) | **fail** (stopped at LLR −2.46) | −6.5 ± 8.4 | 3200 | 808 / 868 / 1524 | −2.46 | 97416 | rejected/continuation-history (72388e0) |
 
 Elo is relative to the previous row's build, not to the M2 baseline, so the
 column does not sum. Bench is the fixed-depth node count (TST-2).
@@ -37,3 +38,9 @@ column does not sum. Bench is the fixed-depth node count (TST-2).
   with LLR 0.22: a gain of about +2.7 Elo (LOS 91%) that [0, 5] cannot
   decide. Exact and harmless; retry bundled with another change, or as a
   [-5, 0] non-regression test.
+- **Continuation history (13).** Stopped at LLR -2.46 (84% of the way to
+  rejection) after 3,200 games with a steady -6 to -7 Elo. At depth 15 it
+  searched 3.7% fewer nodes at 9% lower NPS, so the ordering helps but the
+  table reads cost more than they save. Retry with i16 entries, with only
+  the one-ply entry (or a down-weighted two-ply one), and after the later
+  pruning features, when ordering matters more.
