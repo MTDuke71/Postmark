@@ -59,6 +59,10 @@ pub const ASPIRATION_MIN_DEPTH: i32 = 6;
 /// on each failed attempt.
 pub const ASPIRATION_WINDOW: i32 = 50;
 
+/// Least remaining depth at which a node without a hash move is searched
+/// one ply shallower (internal iterative reduction).
+pub const IIR_MIN_DEPTH: i32 = 4;
+
 /// Greatest remaining depth at which reverse futility pruning applies.
 pub const RFP_MAX_DEPTH: i32 = 7;
 

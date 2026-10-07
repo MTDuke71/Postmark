@@ -20,8 +20,8 @@ use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
 use crate::params::{
     ASPIRATION_MIN_DEPTH, ASPIRATION_WINDOW, FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY,
-    FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, LMR_BASE_PERCENT,
-    LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK,
+    FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, IIR_MIN_DEPTH,
+    LMR_BASE_PERCENT, LMR_DIVISOR_PERCENT, LMR_FULL_DEPTH_MOVES, LMR_MIN_DEPTH, NODE_POLL_MASK,
     NULL_MOVE_DEPTH_DIVISOR, NULL_MOVE_MIN_DEPTH, NULL_MOVE_REDUCTION, ORDER_BAD_CAPTURE,
     ORDER_CAPTURE, ORDER_HASH_MOVE, ORDER_KILLER_FIRST, ORDER_KILLER_SECOND, ORDER_QUEEN_PROMOTION,
     ORDER_VICTIM_WEIGHT, RFP_MARGIN, RFP_MAX_DEPTH,
@@ -496,7 +496,7 @@ impl<'a> Searcher<'a> {
     ///
     /// If the search has been interrupted the return value is meaningless
     /// and must be discarded; callers check `self.aborted`.
-    fn negamax(&mut self, depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
+    fn negamax(&mut self, mut depth: i32, ply: usize, mut alpha: i32, beta: i32) -> i32 {
         if depth <= 0 {
             return self.quiescence(ply, alpha, beta);
         }
@@ -539,6 +539,19 @@ impl<'a> Searcher<'a> {
             if usable {
                 return entry.score;
             }
+        }
+
+        // Internal iterative reduction. A node with no hash move is one
+        // the search has not seen before at a useful depth, or whose
+        // entry has been overwritten, and without a first move to try it
+        // is expensive to search: the ordering falls back on killers and
+        // history alone. Searching it one ply shallower costs little
+        // accuracy and fills the table, so that if the node is reached
+        // again (as it usually is in the next iteration) it has a hash
+        // move. Only deep enough nodes are reduced, where the saving is
+        // worth the lost ply.
+        if ply > 0 && depth >= IIR_MIN_DEPTH && entry.is_none_or(|entry| entry.mv == Move::NULL) {
+            depth -= 1;
         }
 
         let in_check = self.position.in_check();
