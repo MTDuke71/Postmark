@@ -47,6 +47,10 @@ pub const MATE: i32 = 31_000;
 /// always lie strictly inside.
 pub const MATE_BOUND: i32 = MATE - MAX_PLY as i32;
 
+/// Number of (piece, square) pairs: the size of each continuation-history
+/// dimension.
+const PIECE_SQUARES: usize = 12 * 64;
+
 /// Score of a drawn position.
 pub const DRAW: i32 = 0;
 
@@ -176,6 +180,17 @@ pub struct Searcher<'a> {
     /// destination: how often the move has caused a cutoff, anywhere in
     /// the tree, against how often it was tried and failed to.
     history: Box<[[[i32; 64]; 64]; 2]>,
+    /// Continuation history: like `history`, but indexed by the previous
+    /// move as well (by the piece moved and its destination, for both
+    /// moves), so that it records how often a quiet move has refuted a
+    /// particular preceding move rather than how good it is on average.
+    /// The one- and two-ply predecessors are both consulted, through the
+    /// same table.
+    continuation: Box<[[i32; PIECE_SQUARES]]>,
+    /// For each ply, the piece and destination of the move made there on
+    /// the current line, as an index into `continuation`, or `None` after
+    /// a null move.
+    moved: [Option<usize>; MAX_PLY + 1],
     /// For each ply, whether the node there is currently searching a null
     /// move, so that its child does not try one straight after.
     null_moved: [bool; MAX_PLY + 1],
@@ -218,6 +233,8 @@ impl<'a> Searcher<'a> {
             pv_len: [0; MAX_PLY + 1],
             killers: [[Move::NULL; 2]; MAX_PLY + 1],
             history: Box::new([[[0; 64]; 64]; 2]),
+            continuation: vec![[0; PIECE_SQUARES]; PIECE_SQUARES].into_boxed_slice(),
+            moved: [None; MAX_PLY + 1],
             null_moved: [false; MAX_PLY + 1],
             root_pv: Vec::with_capacity(MAX_PLY),
         }
@@ -339,7 +356,7 @@ impl<'a> Searcher<'a> {
     /// ply. Sibling positions differ by one move of the opponent, so the
     /// same reply often refutes many of them; trying it early finds those
     /// cutoffs without searching the other quiet moves first.
-    fn order_score(&self, mv: Move, hash_move: Move, killers: [Move; 2]) -> i32 {
+    fn order_score(&self, mv: Move, ply: usize, hash_move: Move, killers: [Move; 2]) -> i32 {
         if mv == hash_move {
             return ORDER_HASH_MOVE;
         }
@@ -376,10 +393,49 @@ impl<'a> Searcher<'a> {
             None if !mv.is_capture() => {
                 let side = self.position.side_to_move().index();
                 score = self.history[side][mv.from().index()][mv.to().index()];
+                // Add how the move has fared after the previous move and
+                // the one before that. Each table is bounded, so the sum
+                // still ranks below the killers.
+                let key = self.move_key(mv);
+                for back in 1..=2 {
+                    if ply >= back
+                        && let Some(previous) = self.moved[ply - back]
+                    {
+                        score += self.continuation[previous][key];
+                    }
+                }
             }
             None => {}
         }
         score
+    }
+
+    /// Returns the index of `mv` in the continuation-history table: the
+    /// piece it moves and the square it goes to. A promotion counts as the
+    /// pawn, since that is what stands on the origin square.
+    #[inline]
+    fn move_key(&self, mv: Move) -> usize {
+        let piece = self
+            .position
+            .piece_on(mv.from())
+            .map_or(0, |piece| piece.index());
+        piece * 64 + mv.to().index()
+    }
+
+    /// Adjusts the continuation-history scores of the quiet move `mv`,
+    /// played at `ply`, by `bonus`: one entry for the move before it on
+    /// the current line and one for the move before that. The update
+    /// rule is that of [`Searcher::update_history`].
+    fn update_continuation(&mut self, mv: Move, ply: usize, bonus: i32) {
+        let key = self.move_key(mv);
+        for back in 1..=2 {
+            if ply >= back
+                && let Some(previous) = self.moved[ply - back]
+            {
+                let score = &mut self.continuation[previous][key];
+                *score += bonus - *score * bonus.abs() / HISTORY_MAX;
+            }
+        }
     }
 
     /// Adjusts the history score of the quiet move `mv` for the side to
@@ -400,12 +456,13 @@ impl<'a> Searcher<'a> {
     fn score_moves(
         &self,
         list: &MoveList,
+        ply: usize,
         hash_move: Move,
         killers: [Move; 2],
     ) -> [i32; MoveList::CAPACITY] {
         let mut scores = [0; MoveList::CAPACITY];
         for (score, &mv) in scores.iter_mut().zip(list.iter()) {
-            *score = self.order_score(mv, hash_move, killers);
+            *score = self.order_score(mv, ply, hash_move, killers);
         }
         scores
     }
@@ -547,6 +604,7 @@ impl<'a> Searcher<'a> {
         {
             let reduction = NULL_MOVE_REDUCTION + depth / NULL_MOVE_DEPTH_DIVISOR;
             self.null_moved[ply] = true;
+            self.moved[ply] = None;
             self.position.make_null_move();
             let score = -self.negamax(depth - 1 - reduction, ply + 1, -beta, -beta + 1);
             self.position.unmake_null_move();
@@ -580,7 +638,7 @@ impl<'a> Searcher<'a> {
             Some(&mv) if ply == 0 => mv,
             _ => entry.map_or(Move::NULL, |entry| entry.mv),
         };
-        let mut scores = self.score_moves(&list, hash_move, self.killers[ply]);
+        let mut scores = self.score_moves(&list, ply, hash_move, self.killers[ply]);
 
         // Futility pruning. Near the horizon, a quiet move is unlikely to
         // raise the score above alpha when the static evaluation is below
@@ -609,6 +667,7 @@ impl<'a> Searcher<'a> {
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
             let quiet = !mv.is_capture() && mv.promotion().is_none();
+            self.moved[ply] = Some(self.move_key(mv));
             self.make(mv);
             // Whether the move gives check is known only once it is made.
             if futile && quiet && index > 0 && !self.position.in_check() {
@@ -690,8 +749,10 @@ impl<'a> Searcher<'a> {
                             let bonus =
                                 (HISTORY_BONUS_SCALE * depth * depth).min(HISTORY_BONUS_MAX);
                             self.update_history(mv, bonus);
+                            self.update_continuation(mv, ply, bonus);
                             for &failed in &failed_quiets[..failed_count] {
                                 self.update_history(failed, -bonus);
+                                self.update_continuation(failed, ply, -bonus);
                             }
                         }
                         break;
@@ -757,7 +818,7 @@ impl<'a> Searcher<'a> {
             generate(&self.position, GenKind::Noisy, &mut list);
         }
 
-        let mut scores = self.score_moves(&list, Move::NULL, [Move::NULL; 2]);
+        let mut scores = self.score_moves(&list, ply, Move::NULL, [Move::NULL; 2]);
         for index in 0..list.len() {
             let mv = Searcher::pick_move(&mut list, &mut scores, index);
             // A capture that loses material by static exchange evaluation

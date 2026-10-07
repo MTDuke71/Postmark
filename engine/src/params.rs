@@ -33,9 +33,11 @@ pub const ORDER_KILLER_FIRST: i32 = 90_000;
 /// Ordering score of the second killer move at a ply.
 pub const ORDER_KILLER_SECOND: i32 = 80_000;
 
-/// Largest magnitude a history score can reach. It must stay below
-/// [`ORDER_KILLER_SECOND`] so that history only ranks the remaining quiet
-/// moves among themselves.
+/// Largest magnitude a history score can reach, for the plain history
+/// table and for each continuation-history entry alike. A quiet move's
+/// ordering score sums one plain and two continuation entries, so three
+/// times this value must stay below [`ORDER_KILLER_SECOND`], so that
+/// history only ranks the remaining quiet moves among themselves.
 pub const HISTORY_MAX: i32 = 16_384;
 
 /// A history update is this value times the square of the remaining depth:
