@@ -65,7 +65,7 @@ column does not sum. Bench is the fixed-depth node count (TST-2).
 
 | # | Network | Result | Elo | Games | W / L / D | LLR | Bench | Where |
 |---|---------|--------|-----|-------|-----------|-----|-------|-------|
-| 1 | Round 1: H = 128, 20.0M positions at depth 7, teacher FableR 0.17's net, 20 epochs | pass | +452.5 ± 57.3 | 414 | 371 / 14 / 29 | 2.96 | 45787 | (this commit) |
+| 1 | Round 1: H = 128, 20.0M positions at depth 7, teacher FableR 0.17's net, 20 epochs | pass | +452.5 ± 57.3 | 414 | 371 / 14 / 29 | 2.96 | 45787 | 62b5371 |
 
 Elo is relative to the previous row's build (row 1: v0.2.0, material + PST).
 
