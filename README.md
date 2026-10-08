@@ -52,6 +52,17 @@ target/v3/release/datagen --book openings.epd --out data/gen --depth 7 \
 `datagen --help` lists the options. On a Ryzen 7 7800X3D with 15 threads
 it records about 5,000-6,000 positions per second at depth 7.
 
+`tools/train_nnue.py` (Python with NumPy and PyTorch) turns those files
+into a network in the shared format, trained on the GPU when there is one:
+
+```
+python tools/train_nnue.py preprocess data/gen --out data/gen.npz
+python tools/train_nnue.py train data/gen.npz --out postmark.nnue --hidden 128
+```
+
+It prints a few probe positions at the end; the engine's `eval` command,
+with the file loaded through `EvalFile`, should agree to the centipawn.
+
 ## Checks
 
 These are the checks CI runs on every push:
