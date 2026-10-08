@@ -5,7 +5,7 @@ members = ["engine"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-license = "Unlicense"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/MTDuke71/Postmark"
 
 # Documentation requirements PRN-7 / TST-8. These are warnings locally so work
