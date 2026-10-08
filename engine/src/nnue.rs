@@ -621,22 +621,18 @@ mod tests {
 
     #[test]
     fn feature_index_matches_the_shared_layout() {
-        // A white knight on f3 (square 21) from White's view.
+        // The index is (colour * 6 + kind) * 64 + square, with colour and
+        // square relative to the viewer.
+        // A white knight on f3 (square 21) from White's view: own knight.
         let knight = Piece::WhiteKnight;
         let f3 = Square::parse("f3").unwrap();
-        assert_eq!(feature(Color::White, knight, f3), (0 * 6 + 1) * 64 + 21);
+        assert_eq!(feature(Color::White, knight, f3), 64 + 21);
         // From Black's view it is an enemy knight on f6 (square 45).
-        assert_eq!(feature(Color::Black, knight, f3), (1 * 6 + 1) * 64 + 45);
+        assert_eq!(feature(Color::Black, knight, f3), 7 * 64 + 45);
         // A black king on e8 is White's enemy king on 60, Black's own king on e1.
         let e8 = Square::parse("e8").unwrap();
-        assert_eq!(
-            feature(Color::White, Piece::BlackKing, e8),
-            (1 * 6 + 5) * 64 + 60
-        );
-        assert_eq!(
-            feature(Color::Black, Piece::BlackKing, e8),
-            (0 * 6 + 5) * 64 + 4
-        );
+        assert_eq!(feature(Color::White, Piece::BlackKing, e8), 11 * 64 + 60);
+        assert_eq!(feature(Color::Black, Piece::BlackKing, e8), 5 * 64 + 4);
     }
 
     #[test]

@@ -34,6 +34,24 @@ Besides the standard UCI commands it understands:
 A command given on the command line is run once and the engine exits, e.g.
 `postmark bench`.
 
+## Training data
+
+The `tools` crate holds the development tools; the engine itself has no
+dependencies and never needs them. `datagen` plays self-play games at a
+fixed depth on every core and writes NNUE training positions, one per
+line as `<score> <fen> <result>`, with a `#` header recording the build,
+the labelling evaluator and the settings (spec EVL-4):
+
+```
+cargo build --release -p postmark-tools --target-dir target/v3 \
+    --config "build.rustflags=['-Ctarget-cpu=x86-64-v3']"
+target/v3/release/datagen --book openings.epd --out data/gen --depth 7 \
+    --positions 20000000 [--net teacher.nnue]
+```
+
+`datagen --help` lists the options. On a Ryzen 7 7800X3D with 15 threads
+it records about 5,000-6,000 positions per second at depth 7.
+
 ## Checks
 
 These are the checks CI runs on every push:

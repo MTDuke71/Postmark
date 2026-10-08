@@ -1,0 +1,20 @@
+[package]
+name = "postmark-tools"
+description = "Postmark development tools: training-data generation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# BLD-6: tooling lives outside the engine crate and may use dependencies;
+# so far it needs none.
+[dependencies]
+postmark = { path = "../engine" }
+
+[[bin]]
+name = "datagen"
+path = "src/datagen.rs"
+
+[lints]
+workspace = true
