@@ -17,13 +17,17 @@ Requires stable Rust (the toolchain is pinned by `rust-toolchain.toml`).
 
 Run with no arguments, `postmark` speaks UCI on standard input and output,
 for use with any UCI chess GUI or match runner. Options: `Hash` (MB),
-`Threads` (accepted; one thread for now) and `Move Overhead` (ms).
+`Threads` (accepted; one thread for now), `Move Overhead` (ms) and
+`EvalFile` (path of a network in the format shared with Huginn and FableR,
+to evaluate with instead of the built-in evaluator; `<empty>` restores the
+default).
 
 Besides the standard UCI commands it understands:
 
 | Command | Effect |
 |---------|--------|
 | `d` | Print the current position. |
+| `eval` | Print the static evaluation of the current position. |
 | `perft <depth>` | Count the positions reachable in `depth` moves, listed per move. |
 | `bench [depth]` | Search a fixed set of positions and print the node count and speed. |
 

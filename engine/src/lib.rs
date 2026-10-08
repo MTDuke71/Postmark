@@ -11,6 +11,7 @@ pub mod bitboard;
 pub mod eval;
 pub mod movegen;
 pub mod moves;
+pub mod nnue;
 pub mod params;
 pub mod perft;
 pub mod position;

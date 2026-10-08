@@ -11,13 +11,14 @@
 //! actually found even when that lies outside the window.
 
 use std::fmt;
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
-use crate::eval::{Evaluator, PstEvaluator};
+use crate::eval::{Eval, Evaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
+use crate::nnue::Network;
 use crate::params::{
     ASPIRATION_MIN_DEPTH, ASPIRATION_WINDOW, FUTILITY_MARGIN_BASE, FUTILITY_MARGIN_PER_PLY,
     FUTILITY_MAX_DEPTH, HISTORY_BONUS_MAX, HISTORY_BONUS_SCALE, HISTORY_MAX, IIR_MIN_DEPTH,
@@ -143,7 +144,7 @@ pub struct Searcher<'a> {
     /// The position being searched; moves are made and unmade on it.
     position: Position,
     /// Evaluator following `position`.
-    evaluator: PstEvaluator,
+    evaluator: Eval,
     /// Shared transposition table.
     table: &'a TranspositionTable,
     /// Shared flag set from outside to end the search.
@@ -191,7 +192,9 @@ impl<'a> Searcher<'a> {
     /// Prepares a search of `position` under `limits`.
     ///
     /// `start` is the moment the `go` command arrived; `overhead_ms` is the
-    /// time to hold back on each move (see [`TimeBudget::new`]).
+    /// time to hold back on each move (see [`TimeBudget::new`]). The search
+    /// evaluates with `network` if one is given, otherwise with the
+    /// hand-crafted tables.
     pub fn new(
         position: Position,
         table: &'a TranspositionTable,
@@ -199,10 +202,11 @@ impl<'a> Searcher<'a> {
         limits: &Limits,
         start: Instant,
         overhead_ms: u64,
+        network: Option<&Arc<Network>>,
     ) -> Searcher<'a> {
         let max_ply = MAX_PLY as i32 - 1;
         Searcher {
-            evaluator: PstEvaluator::new(&position),
+            evaluator: Eval::new(network, &position),
             budget: TimeBudget::new(limits, position.side_to_move(), overhead_ms),
             position,
             table,
@@ -916,7 +920,7 @@ mod tests {
             ..Limits::default()
         };
         let position = Position::from_fen(fen).unwrap();
-        let mut searcher = Searcher::new(position, &table, &stop, &limits, Instant::now(), 0);
+        let mut searcher = Searcher::new(position, &table, &stop, &limits, Instant::now(), 0, None);
         let mut last = String::new();
         let result = searcher.run(&mut |info| last = info.to_string());
         (result, last)
@@ -996,6 +1000,7 @@ mod tests {
             &limits,
             Instant::now(),
             0,
+            None,
         );
         let result = searcher.run(&mut |_| {});
         assert!(result.best_move.is_some());
@@ -1013,6 +1018,7 @@ mod tests {
             &Limits::default(),
             Instant::now(),
             0,
+            None,
         );
         // The first iteration always completes, so there is a move to play.
         let result = searcher.run(&mut |_| {});

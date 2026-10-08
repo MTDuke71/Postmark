@@ -105,11 +105,11 @@ late move pruning, check and singular extensions, internal iterative reductions.
 |----|-------------|
 | UCI-1 | Supported commands: `uci`, `isready`, `ucinewgame`, `position` (`startpos` / `fen`, with `moves`), `go`, `stop`, `quit`, `setoption`. |
 | UCI-2 | `go` supports `wtime`/`btime`/`winc`/`binc`/`movestogo`, `movetime`, `depth`, `nodes`, and `infinite`. |
-| UCI-3 | Options in v0.1: `Hash` (MB), `Threads` (accepted, fixed at 1 until Lazy SMP ships). |
+| UCI-3 | Options in v0.1: `Hash` (MB), `Threads` (accepted, fixed at 1 until Lazy SMP ships). M4 adds `EvalFile` (string): the path of a network in the EVL-6 format to evaluate with instead of the built-in evaluator; `<empty>` restores the default. It exists for the bootstrap teacher and for holding evaluation constant across engines (EVL-4, EVL-6). |
 | UCI-4 | `info` lines report `depth`, `seldepth`, `score`, `nodes`, `nps`, `time`, `hashfull` and `pv` at least once per completed iteration. |
 | UCI-5 | Input is read on a dedicated thread so `stop` and `isready` are answered while searching. |
 | UCI-6 | Unknown or malformed input is ignored; the engine never panics on input. |
-| UCI-7 | Non-UCI commands: `bench` (§8), `perft`, and `d` (print the board). |
+| UCI-7 | Non-UCI commands: `bench` (§8), `perft`, `d` (print the board) and `eval` (print the static evaluation of the current position, from the hand-crafted tables and, if a network is loaded, from the network). |
 | TIM-1 | Time management uses a soft limit (don't start a new iteration) and a hard limit (abort the search), with a configurable move-overhead margin. |
 | TIM-2 | The engine must not lose on time at the standard test time control (§8) over a 10,000-game run. |
 

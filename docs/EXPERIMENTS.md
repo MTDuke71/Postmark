@@ -60,3 +60,38 @@ column does not sum. Bench is the fixed-depth node count (TST-2).
   removed the slowdown but gained nothing: -2 +/- 7.5 after 4,000 games,
   stopped. Two attempts now; park until a longer time control or an
   evaluation change makes quiet-move ordering worth more.
+
+## M4: NNUE
+
+### Inference (2026-10-08)
+
+The network evaluator (`nnue.rs`) was validated against FableR's own
+implementation before any training: with FableR 0.17's network loaded
+through `EvalFile`, Postmark's `eval` agrees with `fabler.exe` to the
+centipawn on all 12 probe positions (openings, middlegames, endgames,
+queen odds, KB vs K, bare kings). The incremental accumulators are
+compared with a from-scratch computation at every node of a depth-3 walk
+over five positions, in release builds. The `v3` (AVX2) and `generic`
+builds search identical node counts.
+
+Speed at depth 14, best of three, `v3` build, Ryzen 7 7800X3D:
+
+| Evaluator | Middlegame A | Middlegame B | Rook endgame |
+|---|---|---|---|
+| Material + PST | 449,806 nodes, 5.55 Mnps | 1,667,961 nodes, 6.70 Mnps | 84,873 nodes, 7.07 Mnps |
+| FableR net, H = 256 | 236,273 nodes, 3.24 Mnps | 589,700 nodes, 3.91 Mnps | 137,587 nodes, 4.59 Mnps |
+| FableR net, H = 128 | 133,664 nodes, 3.82 Mnps | 616,915 nodes, 4.25 Mnps | 57,296 nodes, 5.21 Mnps |
+
+So the network runs at about 0.6× (H = 256) to 0.7× (H = 128) of the
+hand-crafted speed per node, while reaching the same depth in far fewer
+nodes. Two optimisations were measured on the way: an explicit AVX2
+output layer (`_mm256_madd_epi16`) gained 2-3% over the autovectorised
+loop and was kept; fusing the per-move accumulator update into one pass
+instead of copy-then-adjust changed nothing measurable, so memory traffic
+is not the limit. A lazy update (skipping the accumulator at nodes that
+never evaluate) is the remaining idea, to be tried once a Postmark net
+exists and the SPRT can judge it.
+
+Positions: A `r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10`,
+B `r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1`,
+endgame `8/5pk1/6p1/8/3R4/6P1/r4PK1/8 w - - 0 1`.

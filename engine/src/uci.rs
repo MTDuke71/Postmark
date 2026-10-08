@@ -14,8 +14,10 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::bench;
+use crate::eval::{Eval, Evaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
+use crate::nnue::Network;
 use crate::params::{DEFAULT_HASH_MB, DEFAULT_MOVE_OVERHEAD_MS};
 use crate::perft::divide;
 use crate::position::Position;
@@ -71,6 +73,9 @@ pub struct Engine {
     infinite: bool,
     /// Value of the `Move Overhead` option, in milliseconds.
     move_overhead: u64,
+    /// The network loaded by the `EvalFile` option, if any. Searches use
+    /// it when present and the hand-crafted tables otherwise.
+    network: Option<Arc<Network>>,
 }
 
 impl Default for Engine {
@@ -97,6 +102,7 @@ impl Engine {
             search: None,
             infinite: false,
             move_overhead: DEFAULT_MOVE_OVERHEAD_MS,
+            network: None,
         }
     }
 
@@ -162,9 +168,13 @@ impl Engine {
                     .first()
                     .and_then(|depth| depth.parse().ok())
                     .unwrap_or(bench::DEFAULT_DEPTH);
-                let (nodes, time) = bench::run(depth);
+                let (nodes, time) = bench::run(depth, self.network.as_ref());
                 let nps = nodes as u128 * 1000 / time.as_millis().max(1);
                 send(format_args!("{nodes} nodes {nps} nps"));
+            }
+            "eval" => {
+                self.stop_search();
+                self.print_eval();
             }
             "perft" => {
                 self.stop_search();
@@ -191,7 +201,41 @@ impl Engine {
         send(format_args!(
             "option name Move Overhead type spin default {DEFAULT_MOVE_OVERHEAD_MS} min 0 max {MAX_MOVE_OVERHEAD_MS}"
         ));
+        send("option name EvalFile type string default <empty>");
         send("uciok");
+    }
+
+    /// Handles the `eval` command: prints the static evaluation of the
+    /// current position, in centipawns for the side to move, from the
+    /// hand-crafted tables and, if a network is loaded, from the network.
+    fn print_eval(&self) {
+        let pst = Eval::new(None, &self.position).evaluate(&self.position);
+        send(format_args!("pst {pst}"));
+        if let Some(network) = &self.network {
+            let nnue = Eval::new(Some(network), &self.position).evaluate(&self.position);
+            send(format_args!("nnue {nnue}"));
+        }
+    }
+
+    /// Handles `setoption name EvalFile value <path>`: loads the network at
+    /// `path`, or unloads the current one if `path` is empty or `<empty>`.
+    /// A file that cannot be loaded is reported and leaves the current
+    /// network in place.
+    fn set_eval_file(&mut self, path: &str) {
+        if path.is_empty() || path == "<empty>" {
+            self.network = None;
+            return;
+        }
+        match Network::from_file(path) {
+            Ok(network) => {
+                send(format_args!(
+                    "info string loaded network {path} (hidden size {})",
+                    network.hidden()
+                ));
+                self.network = Some(Arc::new(network));
+            }
+            Err(error) => send(format_args!("info string cannot load {path}: {error}")),
+        }
     }
 
     /// Handles `position (startpos | fen <fen>) [moves <move>...]`.
@@ -242,7 +286,9 @@ impl Engine {
             return;
         }
         let name = name[1..].join(" ").to_ascii_lowercase();
-        let value = value.get(1).copied().unwrap_or("");
+        // A file path may contain spaces, so the value keeps all its tokens.
+        let value = value.get(1..).unwrap_or(&[]).join(" ");
+        let value = value.as_str();
 
         match name.as_str() {
             "hash" => {
@@ -259,6 +305,7 @@ impl Engine {
                     self.move_overhead = overhead.min(MAX_MOVE_OVERHEAD_MS);
                 }
             }
+            "evalfile" => self.set_eval_file(value),
             // "threads" is accepted and has no effect yet.
             _ => {}
         }
@@ -311,8 +358,17 @@ impl Engine {
         let table = Arc::clone(&self.table);
         let stop = Arc::clone(&self.stop);
         let overhead = self.move_overhead;
+        let network = self.network.clone();
         let search = move || {
-            let mut searcher = Searcher::new(position, &table, &stop, &limits, start, overhead);
+            let mut searcher = Searcher::new(
+                position,
+                &table,
+                &stop,
+                &limits,
+                start,
+                overhead,
+                network.as_ref(),
+            );
             let result = searcher.run(&mut |info| send(info));
             while limits.infinite && !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(1));
@@ -443,6 +499,26 @@ mod tests {
         }
         engine.execute("setoption name Hash value 2");
         assert_eq!(engine.move_overhead, MAX_MOVE_OVERHEAD_MS);
+    }
+
+    #[test]
+    fn eval_file_option_loads_and_unloads_a_network() {
+        let path = std::env::temp_dir().join("postmark-uci-test.nnue");
+        let w1 = vec![1; crate::nnue::FEATURES * 16];
+        let network = Network::new(16, w1, vec![0; 16], vec![3; 32], 0);
+        std::fs::write(&path, network.to_bytes()).unwrap();
+        let path = path.to_string_lossy().into_owned();
+
+        let mut engine = Engine::new();
+        engine.execute("setoption name EvalFile value no/such/file.nnue");
+        assert!(engine.network.is_none());
+        engine.execute(&format!("setoption name EvalFile value {path}"));
+        assert_eq!(engine.network.as_deref(), Some(&network));
+        assert!(engine.execute("eval"));
+        assert!(engine.execute("go depth 2"));
+        engine.wait_for_search();
+        engine.execute("setoption name EvalFile value <empty>");
+        assert!(engine.network.is_none());
     }
 
     #[test]

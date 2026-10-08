@@ -7,7 +7,10 @@
 //! keep its own state up to date incrementally instead of recomputing it at
 //! each node.
 
+use std::sync::Arc;
+
 use crate::moves::Move;
+use crate::nnue::{Network, NnueEvaluator};
 use crate::position::Position;
 use crate::types::{Color, Piece, PieceKind, Square};
 
@@ -29,6 +32,65 @@ pub trait Evaluator {
     /// of the side to move (EVL-5). `position` must be the one this
     /// evaluator has been following.
     fn evaluate(&self, position: &Position) -> i32;
+}
+
+/// The evaluator a search uses: the network when one is loaded, otherwise
+/// the hand-crafted tables.
+///
+/// An enum rather than a trait object so that the choice costs a predictable
+/// branch at each call instead of an indirect one, and so that the search
+/// owns its evaluator by value (SRC-7).
+#[derive(Clone, Debug)]
+pub enum Eval {
+    /// Material and piece-square tables (EVL-2).
+    Pst(PstEvaluator),
+    /// The neural network (EVL-4).
+    Nnue(NnueEvaluator),
+}
+
+impl Eval {
+    /// Creates an evaluator following `position`: the network evaluator if
+    /// `network` is given, otherwise the hand-crafted one.
+    pub fn new(network: Option<&Arc<Network>>, position: &Position) -> Eval {
+        match network {
+            Some(network) => Eval::Nnue(NnueEvaluator::new(Arc::clone(network), position)),
+            None => Eval::Pst(PstEvaluator::new(position)),
+        }
+    }
+}
+
+impl Evaluator for Eval {
+    #[inline]
+    fn refresh(&mut self, position: &Position) {
+        match self {
+            Eval::Pst(evaluator) => evaluator.refresh(position),
+            Eval::Nnue(evaluator) => evaluator.refresh(position),
+        }
+    }
+
+    #[inline]
+    fn make_move(&mut self, position: &Position, mv: Move) {
+        match self {
+            Eval::Pst(evaluator) => evaluator.make_move(position, mv),
+            Eval::Nnue(evaluator) => evaluator.make_move(position, mv),
+        }
+    }
+
+    #[inline]
+    fn unmake_move(&mut self) {
+        match self {
+            Eval::Pst(evaluator) => evaluator.unmake_move(),
+            Eval::Nnue(evaluator) => evaluator.unmake_move(),
+        }
+    }
+
+    #[inline]
+    fn evaluate(&self, position: &Position) -> i32 {
+        match self {
+            Eval::Pst(evaluator) => evaluator.evaluate(position),
+            Eval::Nnue(evaluator) => evaluator.evaluate(position),
+        }
+    }
 }
 
 /// A pair of scores for the same feature: its worth in the middlegame and
