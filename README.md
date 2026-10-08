@@ -19,8 +19,9 @@ Run with no arguments, `postmark` speaks UCI on standard input and output,
 for use with any UCI chess GUI or match runner. Options: `Hash` (MB),
 `Threads` (accepted; one thread for now), `Move Overhead` (ms) and
 `EvalFile` (path of a network in the format shared with Huginn and FableR,
-to evaluate with instead of the built-in evaluator; `<empty>` restores the
-default).
+to evaluate with instead of the one built into the binary; `<built-in>`
+restores the embedded network and `pst` selects the material and
+piece-square tables).
 
 Besides the standard UCI commands it understands:
 

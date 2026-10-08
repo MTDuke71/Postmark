@@ -63,6 +63,37 @@ column does not sum. Bench is the fixed-depth node count (TST-2).
 
 ## M4: NNUE
 
+| # | Network | Result | Elo | Games | W / L / D | LLR | Bench | Where |
+|---|---------|--------|-----|-------|-----------|-----|-------|-------|
+| 1 | Round 1: H = 128, 20.0M positions at depth 7, teacher FableR 0.17's net, 20 epochs | pass | +452.5 ± 57.3 | 414 | 371 / 14 / 29 | 2.96 | 45787 | (this commit) |
+
+Elo is relative to the previous row's build (row 1: v0.2.0, material + PST).
+
+### Round 1 (2026-10-08)
+
+Data: `datagen --depth 7 --net fabler.nnue` (FableR 0.17's H = 256 net as
+the bootstrap teacher, spec EVL-4), noob_3moves openings, 8% random moves
+before ply 20, quiet positions only, |score| < 1500, ply >= 10. 289,968
+games, 20,001,283 positions, 86 minutes on 15 threads (3,880/s). Results
+24% / 52% / 24%; score mean +4, sd 536.
+
+Training: `train_nnue.py`, H = 128, 20 epochs of batch 16,384, Adam 1e-3
+halved every 7 epochs, Texel loss + 0.15 anchor, label = search score
+(no result blending). 21 s per epoch on the RX 9070 XT. Validation loss
+0.0081 after one epoch, 0.0041 after twenty and still falling slowly.
+
+Probes (cp, side to move): start +20, queen odds +1146 / −1125, Kiwipete
+−57, rook endgame +6, KB vs K +512. The KB-vs-K overestimate is the
+underfitting both labs saw on their first nets (+367, +408); the search's
+insufficient-material rule keeps it harmless. The engine's `eval` of the
+embedded file agrees with the trainer's floating-point probes to the
+centipawn.
+
+The gain is larger than FableR's first net (+177) because the bootstrap
+teacher skipped the small-corpus regime, and because Postmark's
+hand-crafted evaluator is only material and piece-square tables (EVL-3),
+so the net replaces much less.
+
 ### Inference (2026-10-08)
 
 The network evaluator (`nnue.rs`) was validated against FableR's own

@@ -17,7 +17,7 @@ use crate::bench;
 use crate::eval::{Eval, Evaluator};
 use crate::movegen::{GenKind, generate};
 use crate::moves::{Move, MoveList};
-use crate::nnue::Network;
+use crate::nnue::{self, Network};
 use crate::params::{DEFAULT_HASH_MB, DEFAULT_MOVE_OVERHEAD_MS};
 use crate::perft::divide;
 use crate::position::Position;
@@ -31,6 +31,9 @@ const MAX_HASH_MB: usize = 65_536;
 
 /// Largest value the `Move Overhead` option accepts, in milliseconds.
 const MAX_MOVE_OVERHEAD_MS: u64 = 5_000;
+
+/// The `EvalFile` value that names the embedded network.
+const BUILT_IN: &str = "<built-in>";
 
 /// Stack size of the search thread. The search recurses once per ply and
 /// each level keeps a move list and its ordering scores on the stack, so it
@@ -73,8 +76,9 @@ pub struct Engine {
     infinite: bool,
     /// Value of the `Move Overhead` option, in milliseconds.
     move_overhead: u64,
-    /// The network loaded by the `EvalFile` option, if any. Searches use
-    /// it when present and the hand-crafted tables otherwise.
+    /// The network searches evaluate with: the embedded one unless the
+    /// `EvalFile` option replaced it, or `None` for the hand-crafted
+    /// tables.
     network: Option<Arc<Network>>,
 }
 
@@ -102,7 +106,7 @@ impl Engine {
             search: None,
             infinite: false,
             move_overhead: DEFAULT_MOVE_OVERHEAD_MS,
-            network: None,
+            network: Some(Arc::clone(&nnue::EMBEDDED)),
         }
     }
 
@@ -201,7 +205,9 @@ impl Engine {
         send(format_args!(
             "option name Move Overhead type spin default {DEFAULT_MOVE_OVERHEAD_MS} min 0 max {MAX_MOVE_OVERHEAD_MS}"
         ));
-        send("option name EvalFile type string default <empty>");
+        send(format_args!(
+            "option name EvalFile type string default {BUILT_IN}"
+        ));
         send("uciok");
     }
 
@@ -218,13 +224,21 @@ impl Engine {
     }
 
     /// Handles `setoption name EvalFile value <path>`: loads the network at
-    /// `path`, or unloads the current one if `path` is empty or `<empty>`.
-    /// A file that cannot be loaded is reported and leaves the current
+    /// `path`. The value `<built-in>` (or nothing, or `<empty>`) restores
+    /// the embedded network and `pst` selects the hand-crafted tables. A
+    /// file that cannot be loaded is reported and leaves the current
     /// network in place.
     fn set_eval_file(&mut self, path: &str) {
-        if path.is_empty() || path == "<empty>" {
-            self.network = None;
-            return;
+        match path {
+            "" | "<empty>" | BUILT_IN => {
+                self.network = Some(Arc::clone(&nnue::EMBEDDED));
+                return;
+            }
+            "pst" => {
+                self.network = None;
+                return;
+            }
+            _ => {}
         }
         match Network::from_file(path) {
             Ok(network) => {
@@ -510,6 +524,9 @@ mod tests {
         let path = path.to_string_lossy().into_owned();
 
         let mut engine = Engine::new();
+        assert_eq!(engine.network.as_deref(), Some(&**nnue::EMBEDDED));
+        engine.execute("setoption name EvalFile value pst");
+        assert!(engine.network.is_none());
         engine.execute("setoption name EvalFile value no/such/file.nnue");
         assert!(engine.network.is_none());
         engine.execute(&format!("setoption name EvalFile value {path}"));
@@ -517,8 +534,8 @@ mod tests {
         assert!(engine.execute("eval"));
         assert!(engine.execute("go depth 2"));
         engine.wait_for_search();
-        engine.execute("setoption name EvalFile value <empty>");
-        assert!(engine.network.is_none());
+        engine.execute("setoption name EvalFile value <built-in>");
+        assert_eq!(engine.network.as_deref(), Some(&**nnue::EMBEDDED));
     }
 
     #[test]

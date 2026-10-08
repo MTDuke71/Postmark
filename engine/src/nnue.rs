@@ -32,7 +32,7 @@
 use std::fmt;
 use std::io;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use crate::eval::Evaluator;
 use crate::moves::Move;
@@ -65,6 +65,22 @@ const HIDDEN_MULTIPLE: usize = 16;
 /// Largest hidden size accepted; above this the accumulator stack would be
 /// unreasonably large.
 const MAX_HIDDEN: usize = 4096;
+
+/// The network built into the binary (EVL-4), parsed on first use.
+///
+/// Embedding the file rather than loading it from disk means a renamed or
+/// moved binary can never silently fall back to a different evaluation.
+///
+/// # Panics
+///
+/// Parsing panics if the embedded bytes are not a valid network, which
+/// would be a build error, not a runtime condition.
+pub static EMBEDDED: LazyLock<Arc<Network>> = LazyLock::new(|| {
+    Arc::new(
+        Network::from_bytes(include_bytes!("../net/postmark.nnue"))
+            .expect("the embedded network is valid"),
+    )
+});
 
 /// Why a network could not be loaded.
 #[derive(Debug)]
